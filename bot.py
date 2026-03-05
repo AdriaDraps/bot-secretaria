@@ -177,7 +177,7 @@ def ask_claude(user_msg, calendar_context=""):
         content = f"Contexto actual del calendario:\n{calendar_context}\n\nMensaje del abogado: {user_msg}"
 
     resp = claude_client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-haiku-4-5-20251001",
         max_tokens=800,
         system=system,
         messages=[{"role": "user", "content": content}]
@@ -310,7 +310,7 @@ async def daily_summary(bot):
     )
 
     resp = claude_client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-haiku-4-5-20251001",
         max_tokens=400,
         messages=[{"role": "user", "content": prompt}]
     )
