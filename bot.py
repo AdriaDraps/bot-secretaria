@@ -162,12 +162,20 @@ def format_events(events):
     tz  = pytz.timezone(TIMEZONE)
     txt = ""
     for ev in events:
-        start = ev['start'].get('dateTime', ev['start'].get('date'))
-        try:
-            dt  = datetime.fromisoformat(start.replace('Z', '+00:00')).astimezone(tz)
-            fmt = dt.strftime('%d/%m a las %H:%M')
-        except Exception:
-            fmt = start
+        if 'dateTime' not in ev['start']:
+            date_str = ev['start'].get('date', '')
+            try:
+                dt  = datetime.strptime(date_str, '%Y-%m-%d')
+                fmt = dt.strftime('%d/%m — Todo el día')
+            except Exception:
+                fmt = date_str
+        else:
+            start = ev['start']['dateTime']
+            try:
+                dt  = datetime.fromisoformat(start.replace('Z', '+00:00')).astimezone(tz)
+                fmt = dt.strftime('%d/%m a las %H:%M')
+            except Exception:
+                fmt = start
         txt += f"• *{ev['summary']}* — {fmt}\n"
     return txt
 
