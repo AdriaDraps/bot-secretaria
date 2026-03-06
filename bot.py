@@ -312,15 +312,40 @@ async def daily_summary(bot):
 # RESUMEN SEMANAL (Sábados 9:00 AM)
 # ─────────────────────────────────────────────
 async def weekly_summary(bot):
-    tz     = pytz.timezone(TIMEZONE)
-    today  = datetime.now(tz)
-    events = get_events(days=7)
+    tz    = pytz.timezone(TIMEZONE)
+    today = datetime.now(tz)
 
+    # Calcular lunes y viernes de la semana siguiente
+    days_until_monday = (7 - today.weekday()) % 7 or 7
+    next_monday = today + timedelta(days=days_until_monday)
+    next_friday = next_monday + timedelta(days=4)
+
+    monday_start = next_monday.replace(hour=0,  minute=0,  second=0, microsecond=0)
+    friday_end   = next_friday.replace(hour=23, minute=59, second=59, microsecond=0)
+
+    service = get_calendar_service()
+    events = []
+    if service:
+        try:
+            result = service.events().list(
+                calendarId='primary',
+                timeMin=monday_start.isoformat(),
+                timeMax=friday_end.isoformat(),
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+            events = result.get('items', [])
+        except Exception as e:
+            logger.error(f"Error obteniendo eventos semanales: {e}")
+
+    subject = f"\U0001f4c5 Agenda semanal \u2014 {next_monday.strftime('%d/%m')} al {next_friday.strftime('%d/%m/%Y')}"
+
+    events_text = format_events(events) if events else "Sin eventos."
     prompt = (
-        f"Hoy es sábado {today.strftime('%d/%m/%Y')}.\n\n"
-        f"Agenda de la próxima semana:\n{format_events(events)}\n\n"
-        "Genera un resumen esquemático de la semana que viene. "
-        "Solo datos: día, hora y evento. Sin saludos ni frases. Máximo 80 palabras."
+        f"Agenda semana {next_monday.strftime('%d/%m')} al {next_friday.strftime('%d/%m/%Y')}:\n\n"
+        f"{events_text}\n\n"
+        "Genera un resumen esquemático. Solo datos: día, hora y evento. "
+        "Sin saludos ni frases. Máximo 80 palabras."
     )
 
     resp = claude_client.messages.create(
@@ -330,11 +355,7 @@ async def weekly_summary(bot):
     )
     summary = resp.content[0].text.strip()
 
-    send_email(
-        GMAIL_USER,
-        f"📅 Agenda semana {today.strftime('%d/%m/%Y')}",
-        summary
-    )
+    send_email(GMAIL_USER, subject, summary)
     logger.info("Resumen semanal enviado.")
 
 # ─────────────────────────────────────────────
