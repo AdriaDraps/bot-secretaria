@@ -253,9 +253,9 @@ async def daily_summary(bot):
 
     prompt = (
         f"{ctx}\n\n"
-        "Genera un resumen matutino profesional y motivador para el abogado Adrià. "
-        "Salúdale, lista los eventos del día y menciona los más relevantes de la semana. "
-        "Máximo 200 palabras. Sin JSON, solo texto."
+        "Genera un resumen matutino MUY esquemático para el abogado Adrià. "
+"Formato: primero los eventos de hoy con hora y título, luego los de la semana. "
+"Sin saludos, sin frases motivadoras. Solo datos. Máximo 80 palabras."
     )
 
     resp = claude_client.messages.create(
