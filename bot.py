@@ -339,6 +339,7 @@ async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Generando resumen...")
     await daily_summary(context.bot)
+    await update.message.reply_text("✅ Resumen enviado a su email.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_msg = update.message.text
