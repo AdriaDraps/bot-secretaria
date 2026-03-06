@@ -7,6 +7,16 @@ import base64
 import pytz
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.lib.enums import TA_RIGHT, TA_CENTER, TA_JUSTIFY
+import io
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -220,6 +230,134 @@ def send_email(to_addr, subject, body_text):
         logger.error(f"Error enviando email via Gmail API: {e}")
         return False
 
+
+# ─────────────────────────────────────────────
+# GENERADOR DE FACTURAS PDF
+# ─────────────────────────────────────────────
+def generar_factura(num_factura, cliente_nombre, cliente_nif, cliente_domicilio,
+                    concepto, base_imponible, iva=21, retencion=0):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            rightMargin=2.5*cm, leftMargin=2.5*cm,
+                            topMargin=2*cm, bottomMargin=2*cm)
+    story = []
+
+    normal   = ParagraphStyle('normal',  fontSize=10, fontName='Helvetica', leading=14)
+    negrita  = ParagraphStyle('negrita', fontSize=10, fontName='Helvetica-Bold', leading=14)
+    derecha  = ParagraphStyle('derecha', fontSize=10, fontName='Helvetica', alignment=TA_RIGHT)
+    der_bold = ParagraphStyle('derbold', fontSize=10, fontName='Helvetica-Bold', alignment=TA_RIGHT)
+    centrado = ParagraphStyle('centrado',fontSize=10, fontName='Helvetica-Bold', alignment=TA_CENTER)
+    small    = ParagraphStyle('small',   fontSize=9,  fontName='Helvetica', alignment=TA_CENTER)
+    justif   = ParagraphStyle('justif',  fontSize=10, fontName='Helvetica', leading=15, alignment=TA_JUSTIFY)
+
+    tz  = pytz.timezone(TIMEZONE)
+    hoy = datetime.now(tz).strftime('%d-%m-%Y')
+
+    cab_data = [[
+        Paragraph('', normal),
+        Paragraph('<b>Adrià Paños Ruiz</b><br/>Carrer Comte Ramon Berenguer 1-3, esc. B, 2º 1ª<br/>08204 Sabadell Barcelona<br/>47182626N', derecha)
+    ]]
+    cab_table = Table(cab_data, colWidths=[8*cm, 8*cm])
+    cab_table.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP')]))
+    story.append(cab_table)
+    story.append(Spacer(1, 1.5*cm))
+
+    story.append(Paragraph(hoy, derecha))
+    story.append(Spacer(1, 0.8*cm))
+    story.append(Paragraph(f'Factura núm. {num_factura}', normal))
+    story.append(Spacer(1, 0.8*cm))
+
+    texto_cuerpo = (
+        f'<b>MINUTA DE HONORARIOS</b> devengados por el despacho a cargo de '
+        f'<b>{cliente_nombre.upper()}</b>, con domicilio en {cliente_domicilio}, '
+        f'provisto de NIF/CIF núm. {cliente_nif}, comprensiva de la siguiente actuación profesional:'
+    )
+    story.append(Paragraph(texto_cuerpo, justif))
+    story.append(Spacer(1, 0.8*cm))
+
+    concepto_lines = concepto.replace('\\n', '\n').replace('\n', '<br/>')
+    concepto_data = [[
+        Paragraph(concepto_lines, normal),
+        Paragraph(f'{base_imponible:.2f}', derecha)
+    ]]
+    concepto_table = Table(concepto_data, colWidths=[13*cm, 3*cm])
+    concepto_table.setStyle(TableStyle([
+        ('VALIGN',(0,0),(-1,-1),'TOP'),
+        ('TOPPADDING',(0,0),(-1,-1),4),
+        ('BOTTOMPADDING',(0,0),(-1,-1),4),
+    ]))
+    story.append(concepto_table)
+    story.append(Spacer(1, 0.8*cm))
+
+    iva_importe   = round(base_imponible * iva / 100, 2)
+    retencion_imp = round(base_imponible * retencion / 100, 2)
+    total         = round(base_imponible + iva_importe - retencion_imp, 2)
+
+    totales_rows = [
+        [Paragraph('<b>TOTAL HONORARIOS</b>', negrita), Paragraph(f'<b>{base_imponible:.2f}</b>', der_bold)],
+        [Paragraph(f'{iva}% de IVA, euros', normal),    Paragraph(f'{iva_importe:.2f}', derecha)],
+    ]
+    if retencion > 0:
+        totales_rows.append([Paragraph(f'{retencion}% de retención IRPF, euros', normal), Paragraph(f'{retencion_imp:.2f}', derecha)])
+    totales_rows.append([Paragraph('<b>TOTAL MINUTA, EUROS</b>', negrita), Paragraph(f'<b>{total:.2f}</b>', der_bold)])
+
+    tot_table = Table(totales_rows, colWidths=[13*cm, 3*cm])
+    tot_table.setStyle(TableStyle([
+        ('VALIGN',  (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING',    (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('LINEABOVE', (0,0),  (-1,0),  0.5, colors.black),
+        ('LINEBELOW', (0,0),  (-1,0),  0.5, colors.black),
+        ('LINEABOVE', (0,-1), (-1,-1), 0.5, colors.black),
+        ('LINEBELOW', (0,-1), (-1,-1), 0.5, colors.black),
+        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor('#f0f0f0')),
+    ]))
+    story.append(tot_table)
+    story.append(Spacer(1, 1.5*cm))
+
+    story.append(Paragraph('<b>Forma de pago: transferencia bancaria</b>', centrado))
+    story.append(Paragraph('<b>C/C núm. ES1015632626313269891055</b>', centrado))
+    story.append(Spacer(1, 2*cm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.black, spaceAfter=6))
+    story.append(Paragraph('Teléfono: 603690659', small))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue(), total
+
+def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
+    try:
+        service = get_gmail_service()
+        if not service:
+            return False
+
+        msg = MIMEMultipart()
+        msg['Subject'] = subject
+        msg['From']    = GMAIL_USER
+        msg['To']      = to_addr
+
+        formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', body_text)
+        formatted = formatted.replace('\n', '<br>')
+        html_body = f"""<html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;">
+          <div>{formatted}</div>
+          <div style="margin-top:20px;font-size:0.85em;color:#666;"><em>AP Estudio Jurídico</em></div>
+        </body></html>"""
+        msg.attach(MIMEText(html_body, 'html', 'utf-8'))
+
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload(pdf_bytes)
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename="{pdf_filename}"')
+        msg.attach(part)
+
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        service.users().messages().send(userId='me', body={'raw': raw}).execute()
+        logger.info(f"Email con PDF enviado a {to_addr}")
+        return True
+    except Exception as e:
+        logger.error(f"Error enviando email con PDF: {e}")
+        return False
+
 # ─────────────────────────────────────────────
 # CLAUDE
 # ─────────────────────────────────────────────
@@ -241,6 +379,12 @@ Para consultar agenda:
 Para enviar email:
 {{"action":"send_email","to":"email@ejemplo.com","subject":"Asunto","body":"Cuerpo del email"}}
 
+Para crear factura:
+{{"action":"create_invoice","num_factura":"14/ 2026","cliente_nombre":"Nombre Cliente","cliente_nif":"12345678A","cliente_domicilio":"Dirección completa","cliente_email":"cliente@email.com","concepto":"Descripción del servicio","base_imponible":500.00,"es_base":true,"iva":21,"retencion":15}}
+
+- "es_base":true si el importe indicado es la base imponible
+- "es_base":false si el importe indicado es el total a pagar (calculará la base)
+
 Para cualquier otra respuesta conversacional:
 {{"action":"none","response":"tu respuesta aquí"}}
 
@@ -251,6 +395,7 @@ Reglas:
 - Si falta información necesaria, pídela con action:none
 - Para mover un evento, usa action:update_event con el nombre del evento y la nueva hora/fecha
 - Para emails al procurador u otros contactos del despacho, redacta el cuerpo de forma formal
+- Para facturas, si falta num_factura, cliente_nif, cliente_domicilio o concepto, pídelos con action:none
 """
 
 def ask_claude(user_msg, calendar_context=""):
@@ -461,6 +606,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             else:
                 await update.message.reply_text("❌ Error al enviar el email.")
+
+        elif action == 'create_invoice':
+            base = data['base_imponible']
+            iva  = data.get('iva', 21)
+            ret  = data.get('retencion', 0)
+            # Si es total, calcular base
+            if not data.get('es_base', True):
+                factor = 1 + iva/100 - ret/100
+                base   = round(base / factor, 2)
+            pdf_bytes, total = generar_factura(
+                num_factura=data['num_factura'],
+                cliente_nombre=data['cliente_nombre'],
+                cliente_nif=data['cliente_nif'],
+                cliente_domicilio=data['cliente_domicilio'],
+                concepto=data['concepto'],
+                base_imponible=base,
+                iva=iva,
+                retencion=ret
+            )
+            num_safe    = data['num_factura'].replace('/', '-').replace(' ', '')
+            pdf_name    = f"Factura_{num_safe}_{data['cliente_nombre'].replace(' ','_')}.pdf"
+            body_email  = f"Adjunto encontrará la factura núm. {data['num_factura']} por importe de {total:.2f} €."
+            ok = send_email_with_pdf(data['cliente_email'], f"Factura {data['num_factura']} — AP Estudio Jurídico", body_email, pdf_bytes, pdf_name)
+            if ok:
+                await update.message.reply_text(
+                    f"✅ Factura enviada a `{data['cliente_email']}`\n"
+                    f"📄 *{data['num_factura']}* — Total: *{total:.2f} €*",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text("❌ Error al enviar la factura.")
 
         else:
             await update.message.reply_text(data.get('response', raw))
