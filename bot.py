@@ -278,7 +278,7 @@ def generar_factura(num_factura, cliente_nombre, cliente_nif, cliente_domicilio,
     concepto_lines = concepto.replace('\\n', '\n').replace('\n', '<br/>')
     concepto_data = [[
         Paragraph(concepto_lines, normal),
-        Paragraph(f'{base_imponible:.2f}', derecha)
+        Paragraph(f'{base_imponible:.2f} €', derecha)
     ]]
     concepto_table = Table(concepto_data, colWidths=[13*cm, 3*cm])
     concepto_table.setStyle(TableStyle([
@@ -294,12 +294,12 @@ def generar_factura(num_factura, cliente_nombre, cliente_nif, cliente_domicilio,
     total         = round(base_imponible + iva_importe - retencion_imp, 2)
 
     totales_rows = [
-        [Paragraph('<b>TOTAL HONORARIOS</b>', negrita), Paragraph(f'<b>{base_imponible:.2f}</b>', der_bold)],
-        [Paragraph(f'{iva}% de IVA, euros', normal),    Paragraph(f'{iva_importe:.2f}', derecha)],
+        [Paragraph('<b>TOTAL HONORARIOS</b>', negrita), Paragraph(f'<b>{base_imponible:.2f} €</b>', der_bold)],
+        [Paragraph(f'{iva}% de IVA, euros', normal),    Paragraph(f'{iva_importe:.2f} €', derecha)],
     ]
     if retencion > 0:
-        totales_rows.append([Paragraph(f'{retencion}% de retención IRPF, euros', normal), Paragraph(f'{retencion_imp:.2f}', derecha)])
-    totales_rows.append([Paragraph('<b>TOTAL MINUTA, EUROS</b>', negrita), Paragraph(f'<b>{total:.2f}</b>', der_bold)])
+        totales_rows.append([Paragraph(f'{retencion}% de retención IRPF, euros', normal), Paragraph(f'{retencion_imp:.2f} €', derecha)])
+    totales_rows.append([Paragraph('<b>TOTAL MINUTA, EUROS</b>', negrita), Paragraph(f'<b>{total:.2f} €</b>', der_bold)])
 
     tot_table = Table(totales_rows, colWidths=[13*cm, 3*cm])
     tot_table.setStyle(TableStyle([
