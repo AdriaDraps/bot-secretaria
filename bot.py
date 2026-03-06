@@ -4,11 +4,9 @@ import asyncio
 import json
 import re
 import base64
-import smtplib
 import pytz
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -24,11 +22,13 @@ import anthropic
 TELEGRAM_TOKEN    = os.environ.get('TELEGRAM_TOKEN')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
 GMAIL_USER        = os.environ.get('GMAIL_USER')
-GMAIL_PASSWORD    = os.environ.get('GMAIL_PASSWORD')
 TELEGRAM_CHAT_ID  = os.environ.get('TELEGRAM_CHAT_ID', '')
 GOOGLE_TOKEN_B64  = os.environ.get('GOOGLE_TOKEN_B64')
 TIMEZONE          = 'Europe/Madrid'
-SCOPES            = ['https://www.googleapis.com/auth/calendar']
+SCOPES            = [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/gmail.send'
+]
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -39,9 +39,9 @@ logger = logging.getLogger(__name__)
 claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 # ─────────────────────────────────────────────
-# GOOGLE CALENDAR
+# GOOGLE SERVICES
 # ─────────────────────────────────────────────
-def get_calendar_service():
+def get_credentials():
     if not GOOGLE_TOKEN_B64:
         return None
     try:
@@ -49,11 +49,34 @@ def get_calendar_service():
         creds = Credentials.from_authorized_user_info(token_data, SCOPES)
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
+        return creds
+    except Exception as e:
+        logger.error(f"Error obteniendo credenciales: {e}")
+        return None
+
+def get_calendar_service():
+    creds = get_credentials()
+    if not creds:
+        return None
+    try:
         return build('calendar', 'v3', credentials=creds)
     except Exception as e:
         logger.error(f"Error conectando con Google Calendar: {e}")
         return None
 
+def get_gmail_service():
+    creds = get_credentials()
+    if not creds:
+        return None
+    try:
+        return build('gmail', 'v1', credentials=creds)
+    except Exception as e:
+        logger.error(f"Error conectando con Gmail: {e}")
+        return None
+
+# ─────────────────────────────────────────────
+# GOOGLE CALENDAR
+# ─────────────────────────────────────────────
 def get_events(days=1):
     service = get_calendar_service()
     if not service:
@@ -94,26 +117,6 @@ def create_event(summary, date_str, time_str, duration_hours=1, description=''):
         logger.error(f"Error creando evento: {e}")
         return None
 
-def update_event(event_id, summary=None, date_str=None, time_str=None, duration_hours=None):
-    service = get_calendar_service()
-    if not service:
-        return None
-    try:
-        event = service.events().get(calendarId='primary', eventId=event_id).execute()
-        if summary:
-            event['summary'] = summary
-        if date_str and time_str:
-            tz = pytz.timezone(TIMEZONE)
-            start_dt = tz.localize(datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M"))
-            hours = duration_hours or 1
-            end_dt = start_dt + timedelta(hours=hours)
-            event['start'] = {'dateTime': start_dt.isoformat(), 'timeZone': TIMEZONE}
-            event['end']   = {'dateTime': end_dt.isoformat(),   'timeZone': TIMEZONE}
-        return service.events().update(calendarId='primary', eventId=event_id, body=event).execute()
-    except Exception as e:
-        logger.error(f"Error actualizando evento: {e}")
-        return None
-
 def find_event_by_name(name):
     service = get_calendar_service()
     if not service:
@@ -136,6 +139,23 @@ def find_event_by_name(name):
         logger.error(f"Error buscando evento: {e}")
         return None
 
+def update_event(event_id, date_str=None, time_str=None, duration_hours=1):
+    service = get_calendar_service()
+    if not service:
+        return None
+    try:
+        event = service.events().get(calendarId='primary', eventId=event_id).execute()
+        if date_str and time_str:
+            tz       = pytz.timezone(TIMEZONE)
+            start_dt = tz.localize(datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M"))
+            end_dt   = start_dt + timedelta(hours=duration_hours)
+            event['start'] = {'dateTime': start_dt.isoformat(), 'timeZone': TIMEZONE}
+            event['end']   = {'dateTime': end_dt.isoformat(),   'timeZone': TIMEZONE}
+        return service.events().update(calendarId='primary', eventId=event_id, body=event).execute()
+    except Exception as e:
+        logger.error(f"Error actualizando evento: {e}")
+        return None
+
 def format_events(events):
     if not events:
         return "No hay eventos."
@@ -152,15 +172,16 @@ def format_events(events):
     return txt
 
 # ─────────────────────────────────────────────
-# EMAIL
+# GMAIL API
 # ─────────────────────────────────────────────
 def send_email(to_addr, subject, body_text):
     try:
-        msg             = MIMEMultipart('alternative')
-        msg['Subject']  = subject
-        msg['From']     = GMAIL_USER
-        msg['To']       = to_addr
-        html = f"""
+        service = get_gmail_service()
+        if not service:
+            logger.error("No se pudo conectar con Gmail API")
+            return False
+
+        html_body = f"""
         <html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;">
           <div style="border-top:3px solid #b8960c;padding-top:20px;">
             {body_text.replace(chr(10),'<br>')}
@@ -170,14 +191,21 @@ def send_email(to_addr, subject, body_text):
             <em>Secretaria Virtual — APE Estudio Jurídico</em>
           </div>
         </body></html>"""
-        msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
-        msg.attach(MIMEText(html,      'html',  'utf-8'))
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as srv:
-            srv.login(GMAIL_USER, GMAIL_PASSWORD)
-            srv.sendmail(GMAIL_USER, to_addr, msg.as_string())
+
+        msg = MIMEText(html_body, 'html', 'utf-8')
+        msg['Subject'] = subject
+        msg['From']    = GMAIL_USER
+        msg['To']      = to_addr
+
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        service.users().messages().send(
+            userId='me',
+            body={'raw': raw}
+        ).execute()
+        logger.info(f"Email enviado a {to_addr}")
         return True
     except Exception as e:
-        logger.error(f"Error enviando email: {e}")
+        logger.error(f"Error enviando email via Gmail API: {e}")
         return False
 
 # ─────────────────────────────────────────────
@@ -192,7 +220,7 @@ responde ÚNICAMENTE con un JSON válido en una de estas formas:
 Para crear evento:
 {{"action":"create_event","summary":"título","date":"YYYY-MM-DD","time":"HH:MM","duration_hours":1,"description":""}}
 
-Para modificar evento (mover a otra hora/fecha):
+Para modificar evento:
 {{"action":"update_event","event_name":"nombre del evento","date":"YYYY-MM-DD","time":"HH:MM","duration_hours":1}}
 
 Para consultar agenda:
@@ -235,12 +263,8 @@ def ask_claude(user_msg, calendar_context=""):
 # ─────────────────────────────────────────────
 async def daily_summary(bot):
     chat_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
-    if not chat_id:
-        logger.warning("TELEGRAM_CHAT_ID no configurado — no se puede enviar resumen.")
-        return
-
-    tz    = pytz.timezone(TIMEZONE)
-    today = datetime.now(tz)
+    tz      = pytz.timezone(TIMEZONE)
+    today   = datetime.now(tz)
 
     events_today = get_events(days=1)
     events_week  = get_events(days=7)
@@ -254,8 +278,8 @@ async def daily_summary(bot):
     prompt = (
         f"{ctx}\n\n"
         "Genera un resumen matutino MUY esquemático para el abogado Adrià. "
-"Formato: primero los eventos de hoy con hora y título, luego los de la semana. "
-"Sin saludos, sin frases motivadoras. Solo datos. Máximo 80 palabras."
+        "Formato: primero los eventos de hoy con hora y título, luego los de la semana. "
+        "Sin saludos, sin frases motivadoras. Solo datos. Máximo 80 palabras."
     )
 
     resp = claude_client.messages.create(
@@ -267,8 +291,8 @@ async def daily_summary(bot):
 
     send_email(
         GMAIL_USER,
-        f"📅 Agenda del día — {today.strftime('%d/%m/%Y')}",
-        f"Buenos días,\n\n{summary}\n\nAPE Estudio Jurídico — Secretaria Virtual"
+        f"📅 Agenda {today.strftime('%d/%m/%Y')}",
+        summary
     )
     logger.info("Resumen diario enviado.")
 
@@ -276,20 +300,15 @@ async def daily_summary(bot):
 # RESUMEN SEMANAL (Sábados 9:00 AM)
 # ─────────────────────────────────────────────
 async def weekly_summary(bot):
-    chat_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
-    if not chat_id:
-        return
-
-    tz    = pytz.timezone(TIMEZONE)
-    today = datetime.now(tz)
+    tz     = pytz.timezone(TIMEZONE)
+    today  = datetime.now(tz)
     events = get_events(days=7)
 
     prompt = (
         f"Hoy es sábado {today.strftime('%d/%m/%Y')}.\n\n"
         f"Agenda de la próxima semana:\n{format_events(events)}\n\n"
-        "Genera un resumen de la semana que viene para el abogado Adrià. "
-        "Salúdale, lista los eventos importantes y deséale buena semana. "
-        "Máximo 200 palabras. Sin JSON, solo texto."
+        "Genera un resumen esquemático de la semana que viene. "
+        "Solo datos: día, hora y evento. Sin saludos ni frases. Máximo 80 palabras."
     )
 
     resp = claude_client.messages.create(
@@ -299,15 +318,11 @@ async def weekly_summary(bot):
     )
     summary = resp.content[0].text.strip()
 
-    try:
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"📅 *Resumen semana próxima*\n\n{summary}",
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logger.error(f"Error enviando resumen semanal: {e}")
-
+    send_email(
+        GMAIL_USER,
+        f"📅 Agenda semana {today.strftime('%d/%m/%Y')}",
+        summary
+    )
     logger.info("Resumen semanal enviado.")
 
 # ─────────────────────────────────────────────
@@ -316,8 +331,6 @@ async def weekly_summary(bot):
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     os.environ['TELEGRAM_CHAT_ID'] = chat_id
-    logger.info(f"Chat ID registrado: {chat_id}")
-
     text = (
         "👋 *¡Buenos días, Adrià!* Soy su secretaria virtual.\n\n"
         "Puedo ayudarle con:\n"
@@ -331,8 +344,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"Su Chat ID es: `{update.effective_chat.id}`\n"
-        "Guárdelo para configurar la variable TELEGRAM_CHAT_ID en Railway.",
+        f"Su Chat ID es: `{update.effective_chat.id}`",
         parse_mode='Markdown'
     )
 
@@ -374,15 +386,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             if ev:
                 await update.message.reply_text(
-                    f"✅ Evento creado:\n"
-                    f"📌 *{data['summary']}*\n"
-                    f"📅 {data['date']} a las {data['time']}",
+                    f"✅ Evento creado:\n📌 *{data['summary']}*\n📅 {data['date']} a las {data['time']}",
                     parse_mode='Markdown'
                 )
             else:
-                await update.message.reply_text(
-                    "❌ No se pudo crear el evento. Compruebe la conexión con Google Calendar."
-                )
+                await update.message.reply_text("❌ No se pudo crear el evento.")
 
         elif action == 'update_event':
             event = find_event_by_name(data.get('event_name', ''))
@@ -395,17 +403,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 if ev:
                     await update.message.reply_text(
-                        f"✅ Evento actualizado:\n"
-                        f"📌 *{event['summary']}*\n"
-                        f"📅 {data.get('date')} a las {data.get('time')}",
+                        f"✅ Evento actualizado:\n📌 *{event['summary']}*\n📅 {data.get('date')} a las {data.get('time')}",
                         parse_mode='Markdown'
                     )
                 else:
                     await update.message.reply_text("❌ No se pudo actualizar el evento.")
             else:
-                await update.message.reply_text(
-                    f"❌ No encontré ningún evento con ese nombre en los próximos 30 días."
-                )
+                await update.message.reply_text("❌ No encontré ese evento en los próximos 30 días.")
 
         elif action == 'query_calendar':
             days   = data.get('days', 7)
@@ -447,20 +451,16 @@ def main():
 
     scheduler = AsyncIOScheduler(timezone=pytz.timezone(TIMEZONE))
 
-    # Resumen diario lunes a viernes a las 7:00
     scheduler.add_job(
         lambda: asyncio.ensure_future(daily_summary(app.bot)),
         'cron', hour=7, minute=0, day_of_week='mon-fri'
     )
-
-    # Resumen semanal los sábados a las 9:00
     scheduler.add_job(
         lambda: asyncio.ensure_future(weekly_summary(app.bot)),
         'cron', hour=9, minute=0, day_of_week='sat'
     )
 
     scheduler.start()
-
     logger.info("✅ Bot Secretaria iniciado.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
