@@ -166,6 +166,17 @@ def update_event(event_id, date_str=None, time_str=None, duration_hours=1):
         logger.error(f"Error actualizando evento: {e}")
         return None
 
+def delete_event(event_id):
+    service = get_calendar_service()
+    if not service:
+        return False
+    try:
+        service.events().delete(calendarId='primary', eventId=event_id).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error eliminando evento: {e}")
+        return False
+
 def format_events(events):
     if not events:
         return "No hay eventos."
@@ -373,6 +384,9 @@ Para crear evento:
 Para modificar evento:
 {{"action":"update_event","event_name":"nombre del evento","date":"YYYY-MM-DD","time":"HH:MM","duration_hours":1}}
 
+Para eliminar evento:
+{{"action":"delete_event","event_name":"nombre del evento"}}
+
 Para consultar agenda:
 {{"action":"query_calendar","days":7}}
 
@@ -395,6 +409,7 @@ Reglas:
 - Si la fecha es relativa (mañana, el lunes...) calcúlala a partir de hoy: {today}
 - Si falta información necesaria, pídela con action:none
 - Para mover un evento, usa action:update_event con el nombre del evento y la nueva hora/fecha
+- Para eliminar o cancelar un evento, usa action:delete_event con el nombre del evento
 - Para emails al procurador u otros contactos del despacho, redacta el cuerpo de forma formal
 - Para facturas, si falta num_factura, cliente_nif, cliente_domicilio o concepto, pídelos con action:none
 """
@@ -587,6 +602,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                 else:
                     await update.message.reply_text("❌ No se pudo actualizar el evento.")
+            else:
+                await update.message.reply_text("❌ No encontré ese evento en los próximos 30 días.")
+
+        elif action == 'delete_event':
+            event = find_event_by_name(data.get('event_name', ''))
+            if event:
+                ok = delete_event(event['id'])
+                if ok:
+                    await update.message.reply_text(
+                        f"✅ Evento eliminado: *{event['summary']}*",
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await update.message.reply_text("❌ No se pudo eliminar el evento.")
             else:
                 await update.message.reply_text("❌ No encontré ese evento en los próximos 30 días.")
 
