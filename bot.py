@@ -181,14 +181,18 @@ def send_email(to_addr, subject, body_text):
             logger.error("No se pudo conectar con Gmail API")
             return False
 
+        # Convertir **texto** a <strong>texto</strong> para negrita en HTML
+        formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', body_text)
+        formatted = formatted.replace('\n', '<br>')
+
         html_body = f"""
         <html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;">
           <div style="border-top:3px solid #b8960c;padding-top:20px;">
-            {body_text.replace(chr(10),'<br>')}
+            {formatted}
           </div>
           <div style="margin-top:30px;padding-top:15px;border-top:1px solid #ddd;
                       font-size:0.85em;color:#666;">
-            <em>Secretaria Virtual — APE Estudio Jurídico</em>
+            <em>Secretaria Virtual — AP Estudio Jurídico</em>
           </div>
         </body></html>"""
 
