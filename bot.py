@@ -19,14 +19,14 @@ from googleapiclient.discovery import build
 import anthropic
 
 # ─────────────────────────────────────────────
-# CONFIGURACIÓN (se carga desde variables de entorno en Railway)
+# CONFIGURACIÓN
 # ─────────────────────────────────────────────
 TELEGRAM_TOKEN    = os.environ.get('TELEGRAM_TOKEN')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
 GMAIL_USER        = os.environ.get('GMAIL_USER')
 GMAIL_PASSWORD    = os.environ.get('GMAIL_PASSWORD')
 TELEGRAM_CHAT_ID  = os.environ.get('TELEGRAM_CHAT_ID', '')
-GOOGLE_TOKEN_B64  = os.environ.get('GOOGLE_TOKEN_B64')  # token.json en base64
+GOOGLE_TOKEN_B64  = os.environ.get('GOOGLE_TOKEN_B64')
 TIMEZONE          = 'Europe/Madrid'
 SCOPES            = ['https://www.googleapis.com/auth/calendar']
 
@@ -94,6 +94,48 @@ def create_event(summary, date_str, time_str, duration_hours=1, description=''):
         logger.error(f"Error creando evento: {e}")
         return None
 
+def update_event(event_id, summary=None, date_str=None, time_str=None, duration_hours=None):
+    service = get_calendar_service()
+    if not service:
+        return None
+    try:
+        event = service.events().get(calendarId='primary', eventId=event_id).execute()
+        if summary:
+            event['summary'] = summary
+        if date_str and time_str:
+            tz = pytz.timezone(TIMEZONE)
+            start_dt = tz.localize(datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M"))
+            hours = duration_hours or 1
+            end_dt = start_dt + timedelta(hours=hours)
+            event['start'] = {'dateTime': start_dt.isoformat(), 'timeZone': TIMEZONE}
+            event['end']   = {'dateTime': end_dt.isoformat(),   'timeZone': TIMEZONE}
+        return service.events().update(calendarId='primary', eventId=event_id, body=event).execute()
+    except Exception as e:
+        logger.error(f"Error actualizando evento: {e}")
+        return None
+
+def find_event_by_name(name):
+    service = get_calendar_service()
+    if not service:
+        return None
+    try:
+        tz  = pytz.timezone(TIMEZONE)
+        now = datetime.now(tz)
+        end = now + timedelta(days=30)
+        result = service.events().list(
+            calendarId='primary',
+            timeMin=now.isoformat(),
+            timeMax=end.isoformat(),
+            q=name,
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        items = result.get('items', [])
+        return items[0] if items else None
+    except Exception as e:
+        logger.error(f"Error buscando evento: {e}")
+        return None
+
 def format_events(events):
     if not events:
         return "No hay eventos."
@@ -144,26 +186,30 @@ def send_email(to_addr, subject, body_text):
 SYSTEM_PROMPT = """Eres la secretaria virtual del despacho de abogados APE Estudio Jurídico.
 Ayudas al abogado Adrià con su agenda, emails y tareas administrativas.
 
-Cuando el usuario quiera crear un evento, cancelar uno, consultar agenda o enviar un email,
+Cuando el usuario quiera crear un evento, modificar uno, cancelar uno, consultar agenda o enviar un email,
 responde ÚNICAMENTE con un JSON válido en una de estas formas:
 
 Para crear evento:
-{"action":"create_event","summary":"título","date":"YYYY-MM-DD","time":"HH:MM","duration_hours":1,"description":""}
+{{"action":"create_event","summary":"título","date":"YYYY-MM-DD","time":"HH:MM","duration_hours":1,"description":""}}
+
+Para modificar evento (mover a otra hora/fecha):
+{{"action":"update_event","event_name":"nombre del evento","date":"YYYY-MM-DD","time":"HH:MM","duration_hours":1}}
 
 Para consultar agenda:
-{"action":"query_calendar","days":7}
+{{"action":"query_calendar","days":7}}
 
 Para enviar email:
-{"action":"send_email","to":"email@ejemplo.com","subject":"Asunto","body":"Cuerpo del email"}
+{{"action":"send_email","to":"email@ejemplo.com","subject":"Asunto","body":"Cuerpo del email"}}
 
 Para cualquier otra respuesta conversacional:
-{"action":"none","response":"tu respuesta aquí"}
+{{"action":"none","response":"tu respuesta aquí"}}
 
 Reglas:
 - Responde siempre en español
 - Sé concisa y profesional
 - Si la fecha es relativa (mañana, el lunes...) calcúlala a partir de hoy: {today}
 - Si falta información necesaria, pídela con action:none
+- Para mover un evento, usa action:update_event con el nombre del evento y la nueva hora/fecha
 - Para emails al procurador u otros contactos del despacho, redacta el cuerpo de forma formal
 """
 
@@ -185,107 +231,7 @@ def ask_claude(user_msg, calendar_context=""):
     return resp.content[0].text.strip()
 
 # ─────────────────────────────────────────────
-# HANDLERS TELEGRAM
-# ─────────────────────────────────────────────
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.effective_chat.id)
-    # Persist chat_id for daily summary
-    os.environ['TELEGRAM_CHAT_ID'] = chat_id
-    logger.info(f"Chat ID registrado: {chat_id}")
-
-    text = (
-        "👋 *¡Buenos días, Adrià!* Soy su secretaria virtual.\n\n"
-        "Puedo ayudarle con:\n"
-        "📅 *Agenda* — _\"Cita con García el lunes a las 10\"_\n"
-        "🔍 *Consultas* — _\"¿Qué tengo esta semana?\"_\n"
-        "📧 *Emails* — _\"Envía email al procurador sobre el caso López\"_\n"
-        "🔔 *Recordatorios* — _\"¿Qué plazos tengo esta semana?\"_\n\n"
-        "¿En qué le puedo ayudar?"
-    )
-    await update.message.reply_text(text, parse_mode='Markdown')
-
-async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Devuelve el chat_id — útil para configurar Railway."""
-    await update.message.reply_text(
-        f"Su Chat ID es: `{update.effective_chat.id}`\n"
-        "Guárdelo para configurar la variable TELEGRAM_CHAT_ID en Railway.",
-        parse_mode='Markdown'
-    )
-
-async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("⏳ Generando resumen...")
-    await daily_summary(context.bot)
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_msg = update.message.text
-    await context.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action="typing"
-    )
-
-    # Añadir contexto de calendario si el mensaje lo requiere
-    keywords = ['agenda','cita','evento','reunión','juicio','vista',
-                'mañana','semana','hoy','pendiente','calendario','tengo']
-    calendar_ctx = ""
-    if any(kw in user_msg.lower() for kw in keywords):
-        events = get_events(days=7)
-        if events:
-            calendar_ctx = format_events(events)
-
-    try:
-        raw = ask_claude(user_msg, calendar_ctx)
-
-        # Extraer JSON de la respuesta
-        json_match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if not json_match:
-            await update.message.reply_text(raw)
-            return
-
-        data   = json.loads(json_match.group())
-        action = data.get('action', 'none')
-
-        if action == 'create_event':
-            ev = create_event(
-                data['summary'], data['date'], data['time'],
-                data.get('duration_hours', 1), data.get('description', '')
-            )
-            if ev:
-                await update.message.reply_text(
-                    f"✅ Evento creado:\n"
-                    f"📌 *{data['summary']}*\n"
-                    f"📅 {data['date']} a las {data['time']}",
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text(
-                    "❌ No se pudo crear el evento. Compruebe la conexión con Google Calendar."
-                )
-
-        elif action == 'query_calendar':
-            days   = data.get('days', 7)
-            events = get_events(days=days)
-            if not events:
-                await update.message.reply_text(f"📅 No hay eventos en los próximos {days} días.")
-            else:
-                msg = f"📅 *Agenda — próximos {days} días:*\n\n{format_events(events)}"
-                await update.message.reply_text(msg, parse_mode='Markdown')
-
-        elif action == 'send_email':
-            ok = send_email(data['to'], data['subject'], data['body'])
-            if ok:
-                await update.message.reply_text(f"✅ Email enviado a `{data['to']}`", parse_mode='Markdown')
-            else:
-                await update.message.reply_text("❌ Error al enviar el email.")
-
-        else:
-            await update.message.reply_text(data.get('response', raw))
-
-    except json.JSONDecodeError:
-        await update.message.reply_text(raw)
-    except Exception as e:
-        logger.error(f"Error en handle_message: {e}")
-        await update.message.reply_text("❌ Ha ocurrido un error. Inténtelo de nuevo.")
-
-# ─────────────────────────────────────────────
-# RESUMEN DIARIO (7:00 AM)
+# RESUMEN DIARIO (Lunes a Viernes 7:00 AM)
 # ─────────────────────────────────────────────
 async def daily_summary(bot):
     chat_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
@@ -319,7 +265,6 @@ async def daily_summary(bot):
     )
     summary = resp.content[0].text.strip()
 
-    # Telegram
     try:
         await bot.send_message(
             chat_id=chat_id,
@@ -329,20 +274,25 @@ async def daily_summary(bot):
     except Exception as e:
         logger.error(f"Error enviando resumen por Telegram: {e}")
 
-    # Email
     send_email(
         GMAIL_USER,
         f"📅 Agenda del día — {today.strftime('%d/%m/%Y')}",
         f"Buenos días,\n\n{summary}\n\nAPE Estudio Jurídico — Secretaria Virtual"
     )
     logger.info("Resumen diario enviado.")
+
+# ─────────────────────────────────────────────
+# RESUMEN SEMANAL (Sábados 9:00 AM)
+# ─────────────────────────────────────────────
 async def weekly_summary(bot):
     chat_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
     if not chat_id:
         return
-    tz = pytz.timezone(TIMEZONE)
+
+    tz    = pytz.timezone(TIMEZONE)
     today = datetime.now(tz)
     events = get_events(days=7)
+
     prompt = (
         f"Hoy es sábado {today.strftime('%d/%m/%Y')}.\n\n"
         f"Agenda de la próxima semana:\n{format_events(events)}\n\n"
@@ -350,37 +300,173 @@ async def weekly_summary(bot):
         "Salúdale, lista los eventos importantes y deséale buena semana. "
         "Máximo 200 palabras. Sin JSON, solo texto."
     )
+
     resp = claude_client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=400,
         messages=[{"role": "user", "content": prompt}]
     )
     summary = resp.content[0].text.strip()
-    await bot.send_message(
-        chat_id=chat_id,
-        text=f"📅 *Resumen semana próxima*\n\n{summary}",
+
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"📅 *Resumen semana próxima*\n\n{summary}",
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.error(f"Error enviando resumen semanal: {e}")
+
+    logger.info("Resumen semanal enviado.")
+
+# ─────────────────────────────────────────────
+# HANDLERS TELEGRAM
+# ─────────────────────────────────────────────
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    os.environ['TELEGRAM_CHAT_ID'] = chat_id
+    logger.info(f"Chat ID registrado: {chat_id}")
+
+    text = (
+        "👋 *¡Buenos días, Adrià!* Soy su secretaria virtual.\n\n"
+        "Puedo ayudarle con:\n"
+        "📅 *Agenda* — _\"Cita con García el lunes a las 10\"_\n"
+        "🔍 *Consultas* — _\"¿Qué tengo esta semana?\"_\n"
+        "📧 *Emails* — _\"Envía email al procurador sobre el caso López\"_\n"
+        "🔔 *Recordatorios* — _\"¿Qué plazos tengo esta semana?\"_\n\n"
+        "¿En qué le puedo ayudar?"
+    )
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        f"Su Chat ID es: `{update.effective_chat.id}`\n"
+        "Guárdelo para configurar la variable TELEGRAM_CHAT_ID en Railway.",
         parse_mode='Markdown'
     )
+
+async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("⏳ Generando resumen...")
+    await daily_summary(context.bot)
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_msg = update.message.text
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action="typing"
+    )
+
+    keywords = ['agenda','cita','evento','reunión','juicio','vista',
+                'mañana','semana','hoy','pendiente','calendario','tengo',
+                'mueve','cambia','modifica','cancela']
+    calendar_ctx = ""
+    if any(kw in user_msg.lower() for kw in keywords):
+        events = get_events(days=7)
+        if events:
+            calendar_ctx = format_events(events)
+
+    try:
+        raw = ask_claude(user_msg, calendar_ctx)
+
+        json_match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not json_match:
+            await update.message.reply_text(raw)
+            return
+
+        data   = json.loads(json_match.group())
+        action = data.get('action', 'none')
+
+        if action == 'create_event':
+            ev = create_event(
+                data['summary'], data['date'], data['time'],
+                data.get('duration_hours', 1), data.get('description', '')
+            )
+            if ev:
+                await update.message.reply_text(
+                    f"✅ Evento creado:\n"
+                    f"📌 *{data['summary']}*\n"
+                    f"📅 {data['date']} a las {data['time']}",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ No se pudo crear el evento. Compruebe la conexión con Google Calendar."
+                )
+
+        elif action == 'update_event':
+            event = find_event_by_name(data.get('event_name', ''))
+            if event:
+                ev = update_event(
+                    event['id'],
+                    date_str=data.get('date'),
+                    time_str=data.get('time'),
+                    duration_hours=data.get('duration_hours', 1)
+                )
+                if ev:
+                    await update.message.reply_text(
+                        f"✅ Evento actualizado:\n"
+                        f"📌 *{event['summary']}*\n"
+                        f"📅 {data.get('date')} a las {data.get('time')}",
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await update.message.reply_text("❌ No se pudo actualizar el evento.")
+            else:
+                await update.message.reply_text(
+                    f"❌ No encontré ningún evento con ese nombre en los próximos 30 días."
+                )
+
+        elif action == 'query_calendar':
+            days   = data.get('days', 7)
+            events = get_events(days=days)
+            if not events:
+                await update.message.reply_text(f"📅 No hay eventos en los próximos {days} días.")
+            else:
+                msg = f"📅 *Agenda — próximos {days} días:*\n\n{format_events(events)}"
+                await update.message.reply_text(msg, parse_mode='Markdown')
+
+        elif action == 'send_email':
+            ok = send_email(data['to'], data['subject'], data['body'])
+            if ok:
+                await update.message.reply_text(
+                    f"✅ Email enviado a `{data['to']}`", parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text("❌ Error al enviar el email.")
+
+        else:
+            await update.message.reply_text(data.get('response', raw))
+
+    except json.JSONDecodeError:
+        await update.message.reply_text(raw)
+    except Exception as e:
+        logger.error(f"Error en handle_message: {e}")
+        await update.message.reply_text("❌ Ha ocurrido un error. Inténtelo de nuevo.")
+
 # ─────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("id",    cmd_id))
+    app.add_handler(CommandHandler("start",   cmd_start))
+    app.add_handler(CommandHandler("id",      cmd_id))
     app.add_handler(CommandHandler("resumen", cmd_resumen))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     scheduler = AsyncIOScheduler(timezone=pytz.timezone(TIMEZONE))
-scheduler.add_job(
-    lambda: asyncio.run(daily_summary(app.bot)),
-    'cron', hour=7, minute=0, day_of_week='mon-fri'
-)
-scheduler.add_job(
-    lambda: asyncio.run(weekly_summary(app.bot)),
-    'cron', hour=9, minute=0, day_of_week='sat'
-)
+
+    # Resumen diario lunes a viernes a las 7:00
+    scheduler.add_job(
+        lambda: asyncio.ensure_future(daily_summary(app.bot)),
+        'cron', hour=7, minute=0, day_of_week='mon-fri'
+    )
+
+    # Resumen semanal los sábados a las 9:00
+    scheduler.add_job(
+        lambda: asyncio.ensure_future(weekly_summary(app.bot)),
+        'cron', hour=9, minute=0, day_of_week='sat'
+    )
+
     scheduler.start()
 
     logger.info("✅ Bot Secretaria iniciado.")
