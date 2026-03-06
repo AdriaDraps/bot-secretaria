@@ -380,10 +380,11 @@ Para enviar email:
 {{"action":"send_email","to":"email@ejemplo.com","subject":"Asunto","body":"Cuerpo del email"}}
 
 Para crear factura:
-{{"action":"create_invoice","num_factura":"14/ 2026","cliente_nombre":"Nombre Cliente","cliente_nif":"12345678A","cliente_domicilio":"Dirección completa","cliente_email":"cliente@email.com","concepto":"Descripción del servicio","base_imponible":500.00,"es_base":true,"iva":21,"retencion":15}}
+{{"action":"create_invoice","num_factura":"14/ 2026","cliente_nombre":"Nombre Cliente","cliente_nif":"12345678A","cliente_domicilio":"Dirección completa","cliente_email":"cliente@email.com","concepto":"Descripción del servicio","base_imponible":500.00,"es_base":true,"iva":21,"retencion":0}}
 
 - "es_base":true si el importe indicado es la base imponible
 - "es_base":false si el importe indicado es el total a pagar (calculará la base)
+- "retencion" SOLO se añade si el abogado lo indica expresamente. Por defecto siempre es 0, nunca asumas retención
 
 Para cualquier otra respuesta conversacional:
 {{"action":"none","response":"tu respuesta aquí"}}
