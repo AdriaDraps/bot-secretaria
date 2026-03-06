@@ -212,6 +212,9 @@ async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
+async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("⏳ Generando resumen...")
+    await daily_summary(context.bot)
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_msg = update.message.text
     await context.bot.send_chat_action(
@@ -366,6 +369,7 @@ def main():
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("id",    cmd_id))
+    app.add_handler(CommandHandler("resumen", cmd_resumen))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     scheduler = AsyncIOScheduler(timezone=pytz.timezone(TIMEZONE))
