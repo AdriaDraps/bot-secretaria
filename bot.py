@@ -333,7 +333,31 @@ async def daily_summary(bot):
         f"Buenos días,\n\n{summary}\n\nAPE Estudio Jurídico — Secretaria Virtual"
     )
     logger.info("Resumen diario enviado.")
-
+async def weekly_summary(bot):
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if not chat_id:
+        return
+    tz = pytz.timezone(TIMEZONE)
+    today = datetime.now(tz)
+    events = get_events(days=7)
+    prompt = (
+        f"Hoy es sábado {today.strftime('%d/%m/%Y')}.\n\n"
+        f"Agenda de la próxima semana:\n{format_events(events)}\n\n"
+        "Genera un resumen de la semana que viene para el abogado Adrià. "
+        "Salúdale, lista los eventos importantes y deséale buena semana. "
+        "Máximo 200 palabras. Sin JSON, solo texto."
+    )
+    resp = claude_client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=400,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    summary = resp.content[0].text.strip()
+    await bot.send_message(
+        chat_id=chat_id,
+        text=f"📅 *Resumen semana próxima*\n\n{summary}",
+        parse_mode='Markdown'
+    )
 # ─────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────
@@ -345,10 +369,14 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     scheduler = AsyncIOScheduler(timezone=pytz.timezone(TIMEZONE))
-    scheduler.add_job(
-        lambda: asyncio.create_task(daily_summary(app.bot)),
-        'cron', hour=7, minute=0
-    )
+scheduler.add_job(
+    lambda: asyncio.run(daily_summary(app.bot)),
+    'cron', hour=7, minute=0, day_of_week='mon-fri'
+)
+scheduler.add_job(
+    lambda: asyncio.run(weekly_summary(app.bot)),
+    'cron', hour=9, minute=0, day_of_week='sat'
+)
     scheduler.start()
 
     logger.info("✅ Bot Secretaria iniciado.")
