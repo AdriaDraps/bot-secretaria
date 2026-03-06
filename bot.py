@@ -265,15 +265,6 @@ async def daily_summary(bot):
     )
     summary = resp.content[0].text.strip()
 
-    try:
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"🌅 *Resumen del día — {today.strftime('%d/%m/%Y')}*\n\n{summary}",
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logger.error(f"Error enviando resumen por Telegram: {e}")
-
     send_email(
         GMAIL_USER,
         f"📅 Agenda del día — {today.strftime('%d/%m/%Y')}",
