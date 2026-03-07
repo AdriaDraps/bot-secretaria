@@ -546,6 +546,7 @@ async def daily_summary(bot):
 
     events_today = get_events(days=1)
     events_week  = get_events(days=7)
+    tasks        = get_tasks()
 
     ctx = (
         f"Hoy es {today.strftime('%A %d/%m/%Y')}.\n\n"
@@ -555,7 +556,7 @@ async def daily_summary(bot):
 
     prompt = (
         f"{ctx}\n\n"
-        "Genera un resumen matutino MUY esquemático para el abogado Adrià. "
+        "Genera un resumen matutino MUY esquemático. "
         "Formato: primero los eventos de hoy con hora y título, luego los de la semana. "
         "Sin saludos, sin frases motivadoras. Solo datos. Máximo 80 palabras."
     )
@@ -565,12 +566,15 @@ async def daily_summary(bot):
         max_tokens=400,
         messages=[{"role": "user", "content": prompt}]
     )
-    summary = resp.content[0].text.strip()
+    calendar_summary = resp.content[0].text.strip()
+
+    tasks_text = format_tasks(tasks)
+    body = f"**HOY {today.strftime('%d/%m/%Y')}**\n\n{calendar_summary}\n\n**TAREAS PENDIENTES**\n\n{tasks_text}"
 
     send_email(
         GMAIL_USER,
         f"📅 Agenda {today.strftime('%d/%m/%Y')}",
-        summary
+        body
     )
     logger.info("Resumen diario enviado.")
 
@@ -619,9 +623,13 @@ async def weekly_summary(bot):
         max_tokens=400,
         messages=[{"role": "user", "content": prompt}]
     )
-    summary = resp.content[0].text.strip()
+    calendar_summary = resp.content[0].text.strip()
 
-    send_email(GMAIL_USER, subject, summary)
+    tasks      = get_tasks()
+    tasks_text = format_tasks(tasks)
+    body       = f"**AGENDA SEMANA {next_monday.strftime('%d/%m')} AL {next_friday.strftime('%d/%m/%Y')}**\n\n{calendar_summary}\n\n**TAREAS PENDIENTES**\n\n{tasks_text}"
+
+    send_email(GMAIL_USER, subject, body)
     logger.info("Resumen semanal enviado.")
 
 # ─────────────────────────────────────────────
