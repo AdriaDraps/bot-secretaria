@@ -37,7 +37,8 @@ GOOGLE_TOKEN_B64  = os.environ.get('GOOGLE_TOKEN_B64')
 TIMEZONE          = 'Europe/Madrid'
 SCOPES            = [
     'https://www.googleapis.com/auth/calendar',
-    'https://www.googleapis.com/auth/gmail.send'
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/tasks'
 ]
 
 logging.basicConfig(
@@ -83,6 +84,96 @@ def get_gmail_service():
     except Exception as e:
         logger.error(f"Error conectando con Gmail: {e}")
         return None
+
+def get_tasks_service():
+    creds = get_credentials()
+    if not creds:
+        return None
+    try:
+        return build('tasks', 'v1', credentials=creds)
+    except Exception as e:
+        logger.error(f"Error conectando con Google Tasks: {e}")
+        return None
+
+# ─────────────────────────────────────────────
+# GOOGLE TASKS
+# ─────────────────────────────────────────────
+def get_tasks(tasklist='@default'):
+    service = get_tasks_service()
+    if not service:
+        return []
+    try:
+        result = service.tasks().list(
+            tasklist=tasklist,
+            showCompleted=False,
+            maxResults=20
+        ).execute()
+        return result.get('items', [])
+    except Exception as e:
+        logger.error(f"Error obteniendo tareas: {e}")
+        return []
+
+def create_task(title, notes='', due_date=None):
+    service = get_tasks_service()
+    if not service:
+        return None
+    try:
+        task = {'title': title}
+        if notes:
+            task['notes'] = notes
+        if due_date:
+            task['due'] = due_date + 'T00:00:00.000Z'
+        return service.tasks().insert(tasklist='@default', body=task).execute()
+    except Exception as e:
+        logger.error(f"Error creando tarea: {e}")
+        return None
+
+def delete_task(task_id, tasklist='@default'):
+    service = get_tasks_service()
+    if not service:
+        return False
+    try:
+        service.tasks().delete(tasklist=tasklist, task=task_id).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error eliminando tarea: {e}")
+        return False
+
+def complete_task(task_id, tasklist='@default'):
+    service = get_tasks_service()
+    if not service:
+        return False
+    try:
+        task = service.tasks().get(tasklist=tasklist, task=task_id).execute()
+        task['status'] = 'completed'
+        service.tasks().update(tasklist=tasklist, task=task_id, body=task).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error completando tarea: {e}")
+        return False
+
+def find_task_by_name(name):
+    tasks = get_tasks()
+    name_lower = name.lower()
+    for task in tasks:
+        if name_lower in task.get('title', '').lower():
+            return task
+    return None
+
+def format_tasks(tasks):
+    if not tasks:
+        return "No hay tareas pendientes."
+    txt = ""
+    for t in tasks:
+        due = ''
+        if t.get('due'):
+            try:
+                dt  = datetime.fromisoformat(t['due'].replace('Z', '+00:00'))
+                due = f" — vence {dt.strftime('%d/%m')}"
+            except Exception:
+                pass
+        txt += f"• *{t['title']}*{due}\n"
+    return txt
 
 # ─────────────────────────────────────────────
 # GOOGLE CALENDAR
@@ -393,6 +484,18 @@ Para consultar agenda:
 Para enviar email:
 {{"action":"send_email","to":"email@ejemplo.com","subject":"Asunto","body":"Cuerpo del email"}}
 
+Para consultar tareas:
+{{"action":"query_tasks"}}
+
+Para crear tarea:
+{{"action":"create_task","title":"título de la tarea","notes":"","due_date":"YYYY-MM-DD"}}
+
+Para eliminar tarea:
+{{"action":"delete_task","task_name":"nombre de la tarea"}}
+
+Para marcar tarea como completada:
+{{"action":"complete_task","task_name":"nombre de la tarea"}}
+
 Para crear factura:
 {{"action":"create_invoice","num_factura":"14/ 2026","cliente_nombre":"Nombre Cliente","cliente_nif":"12345678A","cliente_domicilio":"Dirección completa","cliente_email":"cliente@email.com","concepto":"Descripción del servicio","base_imponible":500.00,"es_base":true,"iva":21,"retencion":0}}
 
@@ -410,6 +513,8 @@ Reglas:
 - Si falta información necesaria, pídela con action:none
 - Para mover un evento, usa action:update_event con el nombre del evento y la nueva hora/fecha
 - Para eliminar o cancelar un evento, usa action:delete_event con el nombre del evento
+- Para tareas (pendientes, recordatorios, to-do), usa las acciones de tasks
+- due_date es opcional en create_task, solo si el abogado indica una fecha límite
 - Para emails al procurador u otros contactos del despacho, redacta el cuerpo de forma formal
 - Para facturas, si falta num_factura, cliente_nif, cliente_domicilio o concepto, pídelos con action:none
 """
@@ -555,7 +660,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keywords = ['agenda','cita','evento','reunión','juicio','vista',
                 'mañana','semana','hoy','pendiente','calendario','tengo',
-                'mueve','cambia','modifica','cancela']
+                'mueve','cambia','modifica','cancela','tarea','tareas','recordatorio']
     calendar_ctx = ""
     if any(kw in user_msg.lower() for kw in keywords):
         events = get_events(days=7)
@@ -628,6 +733,50 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg = f"📅 *Agenda — próximos {days} días:*\n\n{format_events(events)}"
                 await update.message.reply_text(msg, parse_mode='Markdown')
 
+        elif action == 'query_tasks':
+            tasks = get_tasks()
+            msg   = f"📋 *Tareas pendientes:*\n\n{format_tasks(tasks)}"
+            await update.message.reply_text(msg, parse_mode='Markdown')
+
+        elif action == 'create_task':
+            t = create_task(data['title'], data.get('notes',''), data.get('due_date'))
+            if t:
+                due_txt = f" (vence {data['due_date']})" if data.get('due_date') else ''
+                await update.message.reply_text(
+                    f"✅ Tarea creada: *{data['title']}*{due_txt}",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text("❌ No se pudo crear la tarea.")
+
+        elif action == 'delete_task':
+            task = find_task_by_name(data.get('task_name',''))
+            if task:
+                ok = delete_task(task['id'])
+                if ok:
+                    await update.message.reply_text(
+                        f"✅ Tarea eliminada: *{task['title']}*",
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await update.message.reply_text("❌ No se pudo eliminar la tarea.")
+            else:
+                await update.message.reply_text("❌ No encontré esa tarea.")
+
+        elif action == 'complete_task':
+            task = find_task_by_name(data.get('task_name',''))
+            if task:
+                ok = complete_task(task['id'])
+                if ok:
+                    await update.message.reply_text(
+                        f"✅ Tarea completada: *{task['title']}*",
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await update.message.reply_text("❌ No se pudo completar la tarea.")
+            else:
+                await update.message.reply_text("❌ No encontré esa tarea.")
+
         elif action == 'send_email':
             ok = send_email(data['to'], data['subject'], data['body'])
             if ok:
@@ -690,14 +839,16 @@ def main():
 
     scheduler = AsyncIOScheduler(timezone=pytz.timezone(TIMEZONE))
 
-    scheduler.add_job(
-        lambda: asyncio.ensure_future(daily_summary(app.bot)),
-        'cron', hour=7, minute=0, day_of_week='mon-fri'
-    )
-    scheduler.add_job(
-        lambda: asyncio.ensure_future(weekly_summary(app.bot)),
-        'cron', hour=9, minute=0, day_of_week='sat'
-    )
+    loop = asyncio.get_event_loop()
+
+    def run_daily():
+        loop.create_task(daily_summary(app.bot))
+
+    def run_weekly():
+        loop.create_task(weekly_summary(app.bot))
+
+    scheduler.add_job(run_daily,  'cron', hour=7, minute=0, day_of_week='mon-fri')
+    scheduler.add_job(run_weekly, 'cron', hour=9, minute=0, day_of_week='sat')
 
     scheduler.start()
     logger.info("✅ Bot Secretaria iniciado.")
