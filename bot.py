@@ -34,11 +34,13 @@ ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
 GMAIL_USER        = os.environ.get('GMAIL_USER')
 TELEGRAM_CHAT_ID  = os.environ.get('TELEGRAM_CHAT_ID', '')
 GOOGLE_TOKEN_B64  = os.environ.get('GOOGLE_TOKEN_B64')
+SHEETS_ID         = os.environ.get('SHEETS_ID', '1vIQAQgiaSHpEAw7QXC88W3JmpBbJV8ee')
 TIMEZONE          = 'Europe/Madrid'
 SCOPES            = [
     'https://www.googleapis.com/auth/calendar',
     'https://www.googleapis.com/auth/gmail.send',
-    'https://www.googleapis.com/auth/tasks'
+    'https://www.googleapis.com/auth/tasks',
+    'https://www.googleapis.com/auth/spreadsheets'
 ]
 
 logging.basicConfig(
@@ -467,6 +469,202 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
 # ─────────────────────────────────────────────
 # CLAUDE
 # ─────────────────────────────────────────────
+
+# ─────────────────────────────────────────────
+# GOOGLE SHEETS — BASE DE DATOS DESPACHO
+# ─────────────────────────────────────────────
+def get_sheets_service():
+    try:
+        creds = get_credentials()
+        return build('sheets', 'v4', credentials=creds)
+    except Exception as e:
+        logger.error(f"Error conectando Sheets: {e}")
+        return None
+
+def sheets_read(rango):
+    try:
+        svc = get_sheets_service()
+        if not svc:
+            return []
+        result = svc.spreadsheets().values().get(
+            spreadsheetId=SHEETS_ID, range=rango
+        ).execute()
+        return result.get('values', [])
+    except Exception as e:
+        logger.error(f"sheets_read error: {e}")
+        return []
+
+def sheets_append(hoja, valores):
+    try:
+        svc = get_sheets_service()
+        if not svc:
+            return False
+        svc.spreadsheets().values().append(
+            spreadsheetId=SHEETS_ID,
+            range=f"{hoja}!A1",
+            valueInputOption='USER_ENTERED',
+            body={'values': [valores]}
+        ).execute()
+        return True
+    except Exception as e:
+        logger.error(f"sheets_append error: {e}")
+        return False
+
+def sheets_update_cell(rango, valor):
+    try:
+        svc = get_sheets_service()
+        if not svc:
+            return False
+        svc.spreadsheets().values().update(
+            spreadsheetId=SHEETS_ID,
+            range=rango,
+            valueInputOption='USER_ENTERED',
+            body={'values': [[valor]]}
+        ).execute()
+        return True
+    except Exception as e:
+        logger.error(f"sheets_update error: {e}")
+        return False
+
+def get_cliente(nombre):
+    """Busca un cliente por nombre (parcial, sin distinción mayúsculas)."""
+    rows = sheets_read("Clientes!A2:L100")
+    nombre_lower = nombre.lower()
+    for row in rows:
+        if len(row) < 2:
+            continue
+        nombre_completo = f"{row[1]} {row[2]}".lower() if len(row) > 2 else row[1].lower()
+        if nombre_lower in nombre_completo or nombre_lower in (row[1].lower() if len(row) > 1 else ''):
+            return {
+                'id': row[0] if len(row) > 0 else '',
+                'nombre': row[1] if len(row) > 1 else '',
+                'apellidos': row[2] if len(row) > 2 else '',
+                'nif': row[3] if len(row) > 3 else '',
+                'email': row[4] if len(row) > 4 else '',
+                'telefono': row[5] if len(row) > 5 else '',
+                'direccion': row[6] if len(row) > 6 else '',
+                'poblacion': row[7] if len(row) > 7 else '',
+                'cp': row[8] if len(row) > 8 else '',
+                'tipo': row[9] if len(row) > 9 else '',
+                'fecha_alta': row[10] if len(row) > 10 else '',
+                'notas': row[11] if len(row) > 11 else '',
+            }
+    return None
+
+def get_todos_clientes():
+    rows = sheets_read("Clientes!A2:L100")
+    clientes = []
+    for row in rows:
+        if len(row) >= 2 and row[0]:
+            nombre = f"{row[1]} {row[2]}".strip() if len(row) > 2 else row[1]
+            clientes.append({
+                'id': row[0], 'nombre': nombre,
+                'nif': row[3] if len(row) > 3 else '',
+                'email': row[4] if len(row) > 4 else '',
+                'telefono': row[5] if len(row) > 5 else '',
+                'tipo': row[9] if len(row) > 9 else '',
+            })
+    return clientes
+
+def get_casos_cliente(nombre_cliente=None):
+    rows = sheets_read("Casos!A2:N100")
+    casos = []
+    for row in rows:
+        if not row or not row[0]:
+            continue
+        if nombre_cliente:
+            cliente_row = (row[2] if len(row) > 2 else '').lower()
+            if nombre_cliente.lower() not in cliente_row:
+                continue
+        casos.append({
+            'id': row[0] if len(row) > 0 else '',
+            'cliente': row[2] if len(row) > 2 else '',
+            'tipo': row[3] if len(row) > 3 else '',
+            'materia': row[4] if len(row) > 4 else '',
+            'descripcion': row[5] if len(row) > 5 else '',
+            'juzgado': row[6] if len(row) > 6 else '',
+            'autos': row[7] if len(row) > 7 else '',
+            'estado': row[8] if len(row) > 8 else '',
+            'fecha_apertura': row[9] if len(row) > 9 else '',
+            'proxima_actuacion': row[10] if len(row) > 10 else '',
+            'fecha_actuacion': row[11] if len(row) > 11 else '',
+            'honorarios': row[12] if len(row) > 12 else '',
+            'cobrado': row[13] if len(row) > 13 else '',
+        })
+    return casos
+
+def get_facturas(estado=None):
+    rows = sheets_read("Facturas!A2:K100")
+    facturas = []
+    for row in rows:
+        if not row or not row[0]:
+            continue
+        est = row[9] if len(row) > 9 else ''
+        if estado and estado.lower() not in est.lower():
+            continue
+        facturas.append({
+            'num': row[0],
+            'cliente': row[2] if len(row) > 2 else '',
+            'fecha': row[3] if len(row) > 3 else '',
+            'concepto': row[4] if len(row) > 4 else '',
+            'base': row[5] if len(row) > 5 else '',
+            'total': row[8] if len(row) > 8 else '',
+            'estado': est,
+            'fecha_cobro': row[10] if len(row) > 10 else '',
+        })
+    return facturas
+
+def siguiente_id_cliente():
+    rows = sheets_read("Clientes!A2:A100")
+    ids = [int(r[0]) for r in rows if r and r[0].isdigit()]
+    return max(ids) + 1 if ids else 1
+
+def siguiente_num_factura():
+    rows = sheets_read("Facturas!A2:A100")
+    year = datetime.now().year
+    nums = []
+    for r in rows:
+        if r and r[0]:
+            try:
+                n = int(r[0].split('/')[0].strip())
+                nums.append(n)
+            except:
+                pass
+    siguiente = max(nums) + 1 if nums else 1
+    return f"{siguiente}/{year}"
+
+def get_bbdd_context():
+    """Genera un resumen de la BD para el contexto de Claude."""
+    try:
+        clientes = get_todos_clientes()
+        casos_activos = get_casos_cliente()
+        facturas_pend = get_facturas(estado='Pendiente')
+
+        ctx = f"BASE DE DATOS DEL DESPACHO:\n"
+        ctx += f"- {len(clientes)} clientes registrados\n"
+        ctx += f"- {len(casos_activos)} casos activos\n"
+        ctx += f"- {len(facturas_pend)} facturas pendientes de cobro\n\n"
+
+        if clientes:
+            ctx += "CLIENTES:\n"
+            for c in clientes[:20]:
+                ctx += f"  • [{c['id']}] {c['nombre']} | NIF: {c['nif']} | Email: {c['email']} | Tel: {c['telefono']}\n"
+
+        if casos_activos:
+            ctx += "\nCASOS:\n"
+            for c in casos_activos[:20]:
+                ctx += f"  • [{c['id']}] {c['cliente']} — {c['materia']} | {c['autos']} | Estado: {c['estado']} | Próx. act.: {c['proxima_actuacion']} ({c['fecha_actuacion']})\n"
+
+        if facturas_pend:
+            ctx += "\nFACTURAS PENDIENTES:\n"
+            for f in facturas_pend:
+                ctx += f"  • {f['num']} | {f['cliente']} | {f['total']} € | {f['concepto'][:40]}\n"
+
+        return ctx
+    except Exception as e:
+        logger.error(f"Error get_bbdd_context: {e}")
+        return ""
+
 SYSTEM_PROMPT = """Eres la secretaria virtual del despacho de abogados APE Estudio Jurídico.
 Ayudas al abogado Adrià con su agenda, emails y tareas administrativas.
 
@@ -524,6 +722,41 @@ Reglas:
 - due_date es opcional en create_task, solo si el abogado indica una fecha límite
 - Para emails al procurador u otros contactos del despacho, redacta el cuerpo de forma formal
 - Para facturas, si falta num_factura, cliente_nif, cliente_domicilio o concepto, pídelos con action:none
+
+ACCIONES BASE DE DATOS (Google Sheets):
+
+Para buscar cliente:
+{{"action":"query_cliente","nombre":"nombre del cliente"}}
+
+Para listar todos los clientes:
+{{"action":"query_clientes"}}
+
+Para añadir cliente nuevo:
+{{"action":"add_cliente","nombre":"Nombre","apellidos":"Apellidos","nif":"12345678A","email":"email@x.com","telefono":"600000000","direccion":"Calle X","poblacion":"Sabadell","cp":"08204","tipo":"Particular","notas":""}}
+
+Para consultar casos (de un cliente o todos):
+{{"action":"query_casos","cliente":"nombre opcional"}}
+
+Para añadir caso nuevo:
+{{"action":"add_caso","id_cliente":"1","cliente":"Nombre","tipo":"Penal","materia":"Descripción","descripcion":"Detalle","juzgado":"Juzgado X","autos":"PA 1/2026","estado":"En instrucción","proxima_actuacion":"Vista oral","fecha_actuacion":"YYYY-MM-DD","honorarios":"1500","cobrado":"0"}}
+
+Para actualizar estado de un caso:
+{{"action":"update_caso_estado","autos":"PA 1/2026","estado":"Nuevo estado","proxima_actuacion":"próxima actuación","fecha_actuacion":"YYYY-MM-DD"}}
+
+Para consultar facturas (todas, pendientes, cobradas):
+{{"action":"query_facturas","estado":"Pendiente"}}
+
+Para marcar factura como cobrada:
+{{"action":"cobrar_factura","num_factura":"1/2026","fecha_cobro":"YYYY-MM-DD"}}
+
+Para crear factura usando datos de la BD (rellena NIF, email, dirección automáticamente):
+{{"action":"create_invoice_bd","cliente":"nombre del cliente","concepto":"descripción","base_imponible":500.00,"es_base":true,"iva":21,"retencion":0}}
+
+Reglas BD:
+- Cuando el abogado pida datos de un cliente, caso o factura, usa las acciones de BD
+- Si pide crear una factura y el cliente está en la BD, usa create_invoice_bd (rellena los datos automáticamente)
+- Si pide el siguiente número de factura, dile cuál es sin preguntar
+- Si pide añadir un cliente o caso, recoge los datos necesarios con action:none antes de añadir
 """
 
 def ask_claude(user_msg, calendar_context=""):
@@ -534,8 +767,19 @@ def ask_claude(user_msg, calendar_context=""):
     system  = SYSTEM_PROMPT.replace('{today}', today).replace('{weekday}', weekday)
 
     content = user_msg
-    if calendar_context:
+    # Incluir contexto de BD si el mensaje menciona clientes, casos o facturas
+    bd_keywords = ['cliente','clientes','caso','casos','factura','facturas','expediente',
+                   'cobrar','pendiente','debe','honorario','autos','juzgado','nif','email',
+                   'teléfono','dirección','añade','añadir','nuevo cliente','nuevo caso']
+    bbdd_ctx = ""
+    if any(kw in user_msg.lower() for kw in bd_keywords):
+        bbdd_ctx = get_bbdd_context()
+    if calendar_context and bbdd_ctx:
+        content = f"Contexto actual del calendario:\n{calendar_context}\n\n{bbdd_ctx}\n\nMensaje del abogado: {user_msg}"
+    elif calendar_context:
         content = f"Contexto actual del calendario:\n{calendar_context}\n\nMensaje del abogado: {user_msg}"
+    elif bbdd_ctx:
+        content = f"{bbdd_ctx}\n\nMensaje del abogado: {user_msg}"
 
     # Añadir mensaje del usuario al historial
     conversation_history.append({"role": "user", "content": content})
@@ -855,6 +1099,216 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             else:
                 await update.message.reply_text("❌ Error al enviar la factura.")
+
+        elif action == 'query_cliente':
+            c = get_cliente(data.get('nombre',''))
+            if c:
+                nombre_completo = f"{c['nombre']} {c['apellidos']}".strip()
+                msg = (f"👤 *{nombre_completo}*\n"
+                       f"NIF: `{c['nif']}`\n"
+                       f"📧 {c['email']}\n"
+                       f"📱 {c['telefono']}\n"
+                       f"🏠 {c['direccion']}, {c['cp']} {c['poblacion']}\n"
+                       f"Tipo: {c['tipo']}\n"
+                       f"Alta: {c['fecha_alta']}\n"
+                       f"📝 {c['notas']}")
+                await update.message.reply_text(msg, parse_mode='Markdown')
+            else:
+                await update.message.reply_text(f"❌ No encontré el cliente '{data.get('nombre')}'.")
+
+        elif action == 'query_clientes':
+            clientes = get_todos_clientes()
+            if not clientes:
+                await update.message.reply_text("No hay clientes registrados.")
+            else:
+                msg = f"👥 *Clientes del despacho ({len(clientes)}):*\n\n"
+                for c in clientes:
+                    msg += f"• *{c['nombre']}* — {c['tipo']} | {c['email']}\n"
+                await update.message.reply_text(msg, parse_mode='Markdown')
+
+        elif action == 'add_cliente':
+            tz = pytz.timezone(TIMEZONE)
+            fecha_alta = datetime.now(tz).strftime('%Y-%m-%d')
+            nuevo_id = siguiente_id_cliente()
+            fila = [
+                str(nuevo_id),
+                data.get('nombre',''), data.get('apellidos',''),
+                data.get('nif',''), data.get('email',''),
+                data.get('telefono',''), data.get('direccion',''),
+                data.get('poblacion',''), data.get('cp',''),
+                data.get('tipo','Particular'), fecha_alta,
+                data.get('notas','')
+            ]
+            ok = sheets_append('Clientes', fila)
+            if ok:
+                nombre = f"{data.get('nombre','')} {data.get('apellidos','')}".strip()
+                await update.message.reply_text(
+                    f"✅ Cliente añadido: *{nombre}* (ID: {nuevo_id})",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text("❌ Error al añadir el cliente.")
+
+        elif action == 'query_casos':
+            casos = get_casos_cliente(data.get('cliente'))
+            if not casos:
+                await update.message.reply_text("No hay casos registrados.")
+            else:
+                nombre_filtro = data.get('cliente','')
+                titulo = f"📁 *Casos de {nombre_filtro}:*" if nombre_filtro else f"📁 *Todos los casos ({len(casos)}):*"
+                msg = titulo + "\n\n"
+                for c in casos:
+                    msg += (f"• *{c['cliente']}* — {c['materia']}\n"
+                            f"  {c['autos']} | {c['estado']}\n"
+                            f"  Próx: {c['proxima_actuacion']} ({c['fecha_actuacion']})\n\n")
+                await update.message.reply_text(msg, parse_mode='Markdown')
+
+        elif action == 'add_caso':
+            rows = sheets_read("Casos!A2:A100")
+            ids  = [int(r[0]) for r in rows if r and r[0].isdigit()]
+            nuevo_id = max(ids) + 1 if ids else 1
+            fila = [
+                str(nuevo_id), data.get('id_cliente',''),
+                data.get('cliente',''), data.get('tipo',''),
+                data.get('materia',''), data.get('descripcion',''),
+                data.get('juzgado',''), data.get('autos',''),
+                data.get('estado','Activo'), data.get('fecha_apertura',''),
+                data.get('proxima_actuacion',''), data.get('fecha_actuacion',''),
+                data.get('honorarios','0'), data.get('cobrado','0')
+            ]
+            ok = sheets_append('Casos', fila)
+            if ok:
+                await update.message.reply_text(
+                    f"✅ Caso añadido: *{data.get('materia','')}* — {data.get('cliente','')}",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text("❌ Error al añadir el caso.")
+
+        elif action == 'update_caso_estado':
+            rows = sheets_read("Casos!A2:N100")
+            autos_buscar = data.get('autos','').lower()
+            encontrado = False
+            for i, row in enumerate(rows, 2):
+                if len(row) > 7 and autos_buscar in row[7].lower():
+                    sheets_update_cell(f"Casos!I{i}", data.get('estado', row[8]))
+                    if data.get('proxima_actuacion'):
+                        sheets_update_cell(f"Casos!K{i}", data['proxima_actuacion'])
+                    if data.get('fecha_actuacion'):
+                        sheets_update_cell(f"Casos!L{i}", data['fecha_actuacion'])
+                    encontrado = True
+                    break
+            if encontrado:
+                await update.message.reply_text(
+                    f"✅ Caso *{data.get('autos','')}* actualizado.",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(f"❌ No encontré el caso '{data.get('autos')}'.")
+
+        elif action == 'query_facturas':
+            estado = data.get('estado')
+            facturas = get_facturas(estado=estado)
+            if not facturas:
+                est_txt = f" {estado}" if estado else ""
+                await update.message.reply_text(f"No hay facturas{est_txt}.")
+            else:
+                titulo = f"🧾 *Facturas{' ' + estado if estado else ''} ({len(facturas)}):*"
+                msg = titulo + "\n\n"
+                total_pend = 0
+                for f in facturas:
+                    msg += f"• *{f['num']}* — {f['cliente']} | {f['total']} € | {f['estado']}\n"
+                    try:
+                        total_pend += float(str(f['total']).replace(',','.'))
+                    except:
+                        pass
+                if estado and 'pendiente' in estado.lower():
+                    msg += f"\n💰 *Total pendiente: {total_pend:.2f} €*"
+                await update.message.reply_text(msg, parse_mode='Markdown')
+
+        elif action == 'cobrar_factura':
+            rows = sheets_read("Facturas!A2:K100")
+            num_buscar = data.get('num_factura','').strip()
+            encontrado = False
+            tz = pytz.timezone(TIMEZONE)
+            fecha_cobro = data.get('fecha_cobro', datetime.now(tz).strftime('%Y-%m-%d'))
+            for i, row in enumerate(rows, 2):
+                if row and row[0].strip() == num_buscar:
+                    sheets_update_cell(f"Facturas!J{i}", "Cobrada")
+                    sheets_update_cell(f"Facturas!K{i}", fecha_cobro)
+                    encontrado = True
+                    break
+            if encontrado:
+                await update.message.reply_text(
+                    f"✅ Factura *{num_buscar}* marcada como cobrada.",
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(f"❌ No encontré la factura '{num_buscar}'.")
+
+        elif action == 'create_invoice_bd':
+            # Buscar cliente en BD para rellenar datos automáticamente
+            c = get_cliente(data.get('cliente',''))
+            if not c:
+                await update.message.reply_text(
+                    f"❌ No encontré el cliente '{data.get('cliente')}' en la base de datos. ¿Me facilita los datos manualmente?"
+                )
+            else:
+                nombre_completo = f"{c['nombre']} {c['apellidos']}".strip()
+                domicilio = f"{c['direccion']}, {c['cp']} {c['poblacion']}"
+                num_factura = siguiente_num_factura()
+                base = data['base_imponible']
+                iva  = data.get('iva', 21)
+                ret  = data.get('retencion', 0)
+                if not data.get('es_base', True):
+                    factor = 1 + iva/100 - ret/100
+                    base   = round(base / factor, 2)
+                pdf_bytes, total = generar_factura(
+                    num_factura=num_factura,
+                    cliente_nombre=nombre_completo,
+                    cliente_nif=c['nif'],
+                    cliente_domicilio=domicilio,
+                    concepto=data['concepto'],
+                    base_imponible=base,
+                    iva=iva,
+                    retencion=ret
+                )
+                # Guardar en Sheets
+                tz = pytz.timezone(TIMEZONE)
+                fecha = datetime.now(tz).strftime('%Y-%m-%d')
+                iva_amount = round(base * iva / 100, 2)
+                ret_amount = round(base * ret / 100, 2)
+                fila = [
+                    num_factura, c['id'], nombre_completo, fecha,
+                    data['concepto'], str(base), str(iva_amount),
+                    str(ret_amount), str(round(total, 2)),
+                    'Emitida', ''
+                ]
+                sheets_append('Facturas', fila)
+
+                # Enviar por email
+                num_safe   = num_factura.replace('/', '-').replace(' ', '')
+                pdf_name   = f"Factura_{num_safe}_{nombre_completo.replace(' ','_')}.pdf"
+                email_dest = c['email'] if c['email'] else GMAIL_USER
+                body_email = f"Adjunto encontrará la factura núm. {num_factura} por importe de {total:.2f} €."
+                ok = send_email_with_pdf(
+                    email_dest,
+                    f"Factura {num_factura} — AP Estudio Jurídico",
+                    body_email, pdf_bytes, pdf_name
+                )
+                if ok:
+                    await update.message.reply_text(
+                        f"✅ Factura *{num_factura}* creada y enviada a `{email_dest}`\n"
+                        f"👤 Cliente: {nombre_completo}\n"
+                        f"💰 Total: *{total:.2f} €*",
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await update.message.reply_text(
+                        f"✅ Factura *{num_factura}* creada (no se pudo enviar por email)\n"
+                        f"💰 Total: *{total:.2f} €*",
+                        parse_mode='Markdown'
+                    )
 
         else:
             await update.message.reply_text(data.get('response', raw))
