@@ -514,6 +514,9 @@ Reglas:
 - Responde siempre en español
 - Sé concisa y profesional
 - Si la fecha es relativa (mañana, el lunes...) calcúlala a partir de hoy: {today}
+- Para calcular días de la semana: el número de día es {weekday} (0=lunes, 1=martes, 2=miércoles, 3=jueves, 4=viernes, 5=sábado, 6=domingo)
+- "el lunes" significa el próximo lunes. Si hoy es domingo (6), el lunes es mañana. Si hoy es lunes (0), el lunes es el de la semana que viene
+- Calcula siempre la fecha exacta YYYY-MM-DD antes de responder y verifica que el día de la semana coincide
 - Si falta información necesaria, pídela con action:none
 - Para mover un evento, usa action:update_event con el nombre del evento y la nueva hora/fecha
 - Para eliminar o cancelar un evento, usa action:delete_event con el nombre del evento
@@ -526,8 +529,9 @@ Reglas:
 def ask_claude(user_msg, calendar_context=""):
     global conversation_history
     tz    = pytz.timezone(TIMEZONE)
-    today = datetime.now(tz).strftime('%d/%m/%Y, %A')
-    system = SYSTEM_PROMPT.replace('{today}', today)
+    today   = datetime.now(tz).strftime('%d/%m/%Y, %A')
+    weekday = str(datetime.now(tz).weekday())
+    system  = SYSTEM_PROMPT.replace('{today}', today).replace('{weekday}', weekday)
 
     content = user_msg
     if calendar_context:
