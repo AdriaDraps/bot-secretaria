@@ -961,6 +961,7 @@ async def cmd_bbdd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
     if allowed_id and str(update.effective_chat.id) != str(allowed_id):
         return
+    await update.message.reply_text("🔍 Comprobando conexión con la base de datos...")
     try:
         svc = get_sheets_service()
         if not svc:
