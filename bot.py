@@ -956,6 +956,34 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text, parse_mode='Markdown')
 
+async def cmd_bbdd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Diagnóstico: comprueba conexión con Google Sheets."""
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+    try:
+        svc = get_sheets_service()
+        if not svc:
+            await update.message.reply_text("❌ No se pudo conectar con Google Sheets (servicio nulo).")
+            return
+        # Obtener metadata
+        meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
+        titulo = meta.get('properties', {}).get('title', '?')
+        hojas  = [s['properties']['title'] for s in meta.get('sheets', [])]
+        # Leer primera fila de cada hoja
+        msg = f"\u2705 Conectado a: *{titulo}*\n\nHojas encontradas:\n"
+        for h in hojas:
+            try:
+                rows = svc.spreadsheets().values().get(
+                    spreadsheetId=SHEETS_ID, range=f"{h}!A2:B5"
+                ).execute().get('values', [])
+                msg += f"\u2022 *{h}*: {len(rows)} filas le\u00eddas\n"
+            except Exception as e2:
+                msg += f"\u2022 *{h}*: error\n"
+        await update.message.reply_text(msg, parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
 async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"Su Chat ID es: `{update.effective_chat.id}`",
