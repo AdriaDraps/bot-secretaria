@@ -481,13 +481,44 @@ def get_sheets_service():
         logger.error(f"Error conectando Sheets: {e}")
         return None
 
+def get_sheet_names():
+    """Obtiene los nombres reales de las hojas del spreadsheet."""
+    try:
+        svc = get_sheets_service()
+        if not svc:
+            return {}
+        meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
+        sheets = meta.get('sheets', [])
+        names = {}
+        for s in sheets:
+            title = s['properties']['title']
+            title_lower = title.lower().replace('á','a').replace('é','e').replace('í','i').replace('ó','o').replace('ú','u')
+            names[title_lower] = title
+        return names
+    except Exception as e:
+        logger.error(f"get_sheet_names error: {e}")
+        return {}
+
+def resolve_sheet_name(nombre_base):
+    """Resuelve el nombre real de una hoja dada su nombre base."""
+    nombres = get_sheet_names()
+    nombre_norm = nombre_base.lower().replace('á','a').replace('é','e').replace('í','i').replace('ó','o').replace('ú','u')
+    return nombres.get(nombre_norm, nombre_base)
+
 def sheets_read(rango):
     try:
         svc = get_sheets_service()
         if not svc:
             return []
+        # Resolver nombre real de la hoja
+        if '!' in rango:
+            hoja, celdas = rango.split('!', 1)
+            hoja_real = resolve_sheet_name(hoja)
+            rango_real = f"{hoja_real}!{celdas}"
+        else:
+            rango_real = rango
         result = svc.spreadsheets().values().get(
-            spreadsheetId=SHEETS_ID, range=rango
+            spreadsheetId=SHEETS_ID, range=rango_real
         ).execute()
         return result.get('values', [])
     except Exception as e:
@@ -499,9 +530,10 @@ def sheets_append(hoja, valores):
         svc = get_sheets_service()
         if not svc:
             return False
+        hoja_real = resolve_sheet_name(hoja)
         svc.spreadsheets().values().append(
             spreadsheetId=SHEETS_ID,
-            range=f"{hoja}!A1",
+            range=f"{hoja_real}!A1",
             valueInputOption='USER_ENTERED',
             body={'values': [valores]}
         ).execute()
@@ -515,9 +547,15 @@ def sheets_update_cell(rango, valor):
         svc = get_sheets_service()
         if not svc:
             return False
+        if '!' in rango:
+            hoja, celdas = rango.split('!', 1)
+            hoja_real = resolve_sheet_name(hoja)
+            rango_real = f"{hoja_real}!{celdas}"
+        else:
+            rango_real = rango
         svc.spreadsheets().values().update(
             spreadsheetId=SHEETS_ID,
-            range=rango,
+            range=rango_real,
             valueInputOption='USER_ENTERED',
             body={'values': [[valor]]}
         ).execute()
