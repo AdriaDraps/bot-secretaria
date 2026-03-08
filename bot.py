@@ -176,7 +176,7 @@ def format_tasks(tasks):
                 due = f" — vence {dt.strftime('%d/%m')}"
             except Exception:
                 pass
-        txt += f"• *{t['title']}*{due}\n"
+        txt += f"• {t['title']}{due}\n"
     return txt
 
 # ─────────────────────────────────────────────
@@ -590,7 +590,7 @@ async def daily_summary(bot):
     calendar_summary = resp.content[0].text.strip()
 
     tasks_text = format_tasks(tasks)
-    body = f"**HOY {today.strftime('%d/%m/%Y')}**\n\n{calendar_summary}\n\n**TAREAS PENDIENTES**\n\n{tasks_text}"
+    body = f"{calendar_summary}\n\n**TAREAS PENDIENTES**\n\n{tasks_text}"
 
     send_email(
         GMAIL_USER,
