@@ -49,6 +49,10 @@ logger = logging.getLogger(__name__)
 
 claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
+# Historial de conversación (memoria de contexto, máx 10 turnos)
+conversation_history = []
+MAX_HISTORY = 10
+
 # ─────────────────────────────────────────────
 # GOOGLE SERVICES
 # ─────────────────────────────────────────────
@@ -520,6 +524,7 @@ Reglas:
 """
 
 def ask_claude(user_msg, calendar_context=""):
+    global conversation_history
     tz    = pytz.timezone(TIMEZONE)
     today = datetime.now(tz).strftime('%d/%m/%Y, %A')
     system = SYSTEM_PROMPT.replace('{today}', today)
@@ -528,13 +533,25 @@ def ask_claude(user_msg, calendar_context=""):
     if calendar_context:
         content = f"Contexto actual del calendario:\n{calendar_context}\n\nMensaje del abogado: {user_msg}"
 
+    # Añadir mensaje del usuario al historial
+    conversation_history.append({"role": "user", "content": content})
+
+    # Mantener solo los últimos MAX_HISTORY turnos
+    if len(conversation_history) > MAX_HISTORY * 2:
+        conversation_history = conversation_history[-(MAX_HISTORY * 2):]
+
     resp = claude_client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=800,
         system=system,
-        messages=[{"role": "user", "content": content}]
+        messages=conversation_history
     )
-    return resp.content[0].text.strip()
+    reply = resp.content[0].text.strip()
+
+    # Guardar respuesta en historial
+    conversation_history.append({"role": "assistant", "content": reply})
+
+    return reply
 
 # ─────────────────────────────────────────────
 # RESUMEN DIARIO (Lunes a Viernes 7:00 AM)
@@ -637,6 +654,10 @@ async def weekly_summary(bot):
 # ─────────────────────────────────────────────
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and chat_id != str(allowed_id):
+        logger.warning(f"Acceso denegado en /start a chat_id: {chat_id}")
+        return
     os.environ['TELEGRAM_CHAT_ID'] = chat_id
     text = (
         "👋 *¡Buenos días, Adrià!* Soy su secretaria virtual.\n\n"
@@ -661,6 +682,12 @@ async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Resumen enviado a su email.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ── SEGURIDAD: solo responde al chat autorizado ──
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        logger.warning(f"Acceso denegado a chat_id: {update.effective_chat.id}")
+        return
+
     user_msg = update.message.text
     await context.bot.send_chat_action(
         chat_id=update.effective_chat.id, action="typing"
