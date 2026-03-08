@@ -1025,7 +1025,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(raw)
             return
 
-        data   = json.loads(json_match.group())
+        try:
+            data = json.loads(json_match.group())
+        except json.JSONDecodeError:
+            # Try to clean and re-parse
+            cleaned = json_match.group().replace('\\n', '\n')
+            data = json.loads(cleaned)
         action = data.get('action', 'none')
 
         if action == 'create_event':
@@ -1378,7 +1383,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
 
         else:
-            await update.message.reply_text(data.get('response', raw))
+            response_text = data.get('response', raw)
+            # Convertir **texto** a negrita Markdown de Telegram
+            response_text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', response_text)
+            await update.message.reply_text(response_text, parse_mode='Markdown')
 
     except json.JSONDecodeError:
         await update.message.reply_text(raw)
@@ -1417,4 +1425,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
