@@ -703,7 +703,7 @@ def get_bbdd_context():
         logger.error(f"Error get_bbdd_context: {e}")
         return ""
 
-SYSTEM_PROMPT = """Eres la secretaria virtual del despacho de abogados APE Estudio Jurídico.
+SYSTEM_PROMPT = """Eres la secretaria virtual del despacho de abogados AP Estudio Jurídico.
 Ayudas al abogado Adrià con su agenda, emails y tareas administrativas.
 
 Cuando el usuario quiera crear un evento, modificar uno, cancelar uno, consultar agenda o enviar un email,
@@ -1395,6 +1395,7 @@ def main():
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("id",      cmd_id))
     app.add_handler(CommandHandler("resumen", cmd_resumen))
+    app.add_handler(CommandHandler("bbdd",    cmd_bbdd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     scheduler = AsyncIOScheduler(timezone=pytz.timezone(TIMEZONE))
@@ -1416,3 +1417,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
