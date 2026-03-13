@@ -1227,7 +1227,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 response_text = data.get('response', raw)
                 response_text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', response_text)
-                await update.message.reply_text(response_text, parse_mode='Markdown')
+                try:
+                    await update.message.reply_text(response_text, parse_mode='Markdown')
+                except Exception:
+                    await update.message.reply_text(response_text)
 
 
     except json.JSONDecodeError:
