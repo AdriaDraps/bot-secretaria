@@ -34,7 +34,7 @@ ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
 GMAIL_USER        = os.environ.get('GMAIL_USER')
 TELEGRAM_CHAT_ID  = os.environ.get('TELEGRAM_CHAT_ID', '')
 GOOGLE_TOKEN_B64  = os.environ.get('GOOGLE_TOKEN_B64')
-SHEETS_ID         = os.environ.get('SHEETS_ID', '1jdXAq-fKfZmFrRzEgxvjdL_cD8Y6YpdZ')
+SHEETS_ID         = os.environ.get('SHEETS_ID', '1saZ98ZEqj46nxcvQC5V0oKJ0GLL-ly0MeuxZqsZHNKI')
 TIMEZONE          = 'Europe/Madrid'
 SCOPES            = [
     'https://www.googleapis.com/auth/calendar',
