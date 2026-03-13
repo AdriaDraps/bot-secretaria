@@ -1230,6 +1230,175 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await update.message.reply_text("❌ Error al enviar la factura.")
 
+
+            elif action == 'query_cliente':
+                c = get_cliente(data.get('nombre', ''))
+                if c:
+                    nombre_completo = f"{c['nombre']} {c['apellidos']}".strip()
+                    msg = (f"👤 {nombre_completo}\n"
+                           f"NIF: {c['nif']}\n"
+                           f"Email: {c['email']}\n"
+                           f"Tel: {c['telefono']}\n"
+                           f"Dir: {c['direccion']}, {c['cp']} {c['poblacion']}\n"
+                           f"Tipo: {c['tipo']}\n"
+                           f"Alta: {c['fecha_alta']}\n"
+                           f"Notas: {c['notas']}")
+                    await update.message.reply_text(msg)
+                else:
+                    await update.message.reply_text(f"❌ No encontré el cliente '{data.get('nombre')}'.")
+
+            elif action == 'query_clientes':
+                clientes = get_todos_clientes()
+                if not clientes:
+                    await update.message.reply_text("No hay clientes registrados.")
+                else:
+                    msg = f"Clientes del despacho ({len(clientes)}):\n\n"
+                    for c in clientes:
+                        msg += f"• {c['nombre']} — {c['tipo']} | {c['email']}\n"
+                    await update.message.reply_text(msg)
+
+            elif action == 'add_cliente':
+                tz = pytz.timezone(TIMEZONE)
+                fecha_alta = datetime.now(tz).strftime('%Y-%m-%d')
+                nuevo_id = siguiente_id_cliente()
+                fila = [
+                    str(nuevo_id), data.get('nombre',''), data.get('apellidos',''),
+                    data.get('nif',''), data.get('email',''), data.get('telefono',''),
+                    data.get('direccion',''), data.get('poblacion',''), data.get('cp',''),
+                    data.get('tipo','Particular'), fecha_alta, data.get('notas','')
+                ]
+                ok = sheets_append('Clientes', fila)
+                if ok:
+                    nombre = f"{data.get('nombre','')} {data.get('apellidos','')}".strip()
+                    await update.message.reply_text(f"✅ Cliente añadido: {nombre} (ID: {nuevo_id})")
+                else:
+                    await update.message.reply_text("❌ Error al añadir el cliente.")
+
+            elif action == 'query_casos':
+                casos = get_casos_cliente(data.get('cliente'))
+                if not casos:
+                    await update.message.reply_text("No hay casos registrados.")
+                else:
+                    nombre_filtro = data.get('cliente', '')
+                    titulo = f"Casos de {nombre_filtro}:" if nombre_filtro else f"Todos los casos ({len(casos)}):"
+                    msg = titulo + "\n\n"
+                    for c in casos:
+                        msg += (f"• {c['cliente']} — {c['materia']}\n"
+                                f"  {c['autos']} | {c['estado']}\n"
+                                f"  Próx: {c['proxima_actuacion']} ({c['fecha_actuacion']})\n\n")
+                    await update.message.reply_text(msg)
+
+            elif action == 'add_caso':
+                rows = sheets_read("Casos!A2:A200")
+                ids = [int(r[0]) for r in rows if r and str(r[0]).isdigit()]
+                nuevo_id = max(ids) + 1 if ids else 1
+                fila = [
+                    str(nuevo_id), data.get('id_cliente',''), data.get('cliente',''),
+                    data.get('tipo',''), data.get('materia',''), data.get('descripcion',''),
+                    data.get('juzgado',''), data.get('autos',''), data.get('estado','Activo'),
+                    data.get('fecha_apertura',''), data.get('proxima_actuacion',''),
+                    data.get('fecha_actuacion',''), data.get('honorarios','0'), data.get('cobrado','0')
+                ]
+                ok = sheets_append('Casos', fila)
+                if ok:
+                    await update.message.reply_text(f"✅ Caso añadido: {data.get('materia','')} — {data.get('cliente','')}")
+                else:
+                    await update.message.reply_text("❌ Error al añadir el caso.")
+
+            elif action == 'update_caso_estado':
+                rows = sheets_read("Casos!A2:N200")
+                autos_buscar = normalizar(data.get('autos', ''))
+                encontrado = False
+                for i, row in enumerate(rows, 2):
+                    if len(row) > 7 and autos_buscar in normalizar(row[7]):
+                        sheets_update_cell(f"Casos!I{i}", data.get('estado', row[8]))
+                        if data.get('proxima_actuacion'):
+                            sheets_update_cell(f"Casos!K{i}", data['proxima_actuacion'])
+                        if data.get('fecha_actuacion'):
+                            sheets_update_cell(f"Casos!L{i}", data['fecha_actuacion'])
+                        encontrado = True
+                        break
+                if encontrado:
+                    await update.message.reply_text(f"✅ Caso {data.get('autos','')} actualizado.")
+                else:
+                    await update.message.reply_text(f"❌ No encontré el caso '{data.get('autos')}'.")
+
+            elif action == 'query_facturas':
+                estado = data.get('estado')
+                facturas = get_facturas(estado=estado)
+                if not facturas:
+                    est_txt = f" {estado}" if estado else ""
+                    await update.message.reply_text(f"No hay facturas{est_txt}.")
+                else:
+                    titulo = f"Facturas{' ' + estado if estado else ''} ({len(facturas)}):"
+                    msg = titulo + "\n\n"
+                    total_pend = 0
+                    for f in facturas:
+                        msg += f"• {f['num']} — {f['cliente']} | {f['total']} € | {f['estado']}\n"
+                        try:
+                            total_pend += float(str(f['total']).replace(',','.'))
+                        except:
+                            pass
+                    if estado and 'pendiente' in estado.lower():
+                        msg += f"\nTotal pendiente: {total_pend:.2f} €"
+                    await update.message.reply_text(msg)
+
+            elif action == 'cobrar_factura':
+                rows = sheets_read("Facturas!A2:K200")
+                num_buscar = normalizar(data.get('num_factura', '').strip())
+                encontrado = False
+                tz = pytz.timezone(TIMEZONE)
+                fecha_cobro = data.get('fecha_cobro', datetime.now(tz).strftime('%Y-%m-%d'))
+                for i, row in enumerate(rows, 2):
+                    if row and normalizar(row[0].strip()) == num_buscar:
+                        sheets_update_cell(f"Facturas!J{i}", "Cobrada")
+                        sheets_update_cell(f"Facturas!K{i}", fecha_cobro)
+                        encontrado = True
+                        break
+                if encontrado:
+                    await update.message.reply_text(f"✅ Factura {data.get('num_factura','')} marcada como cobrada.")
+                else:
+                    await update.message.reply_text(f"❌ No encontré la factura '{data.get('num_factura')}'.")
+
+            elif action == 'create_invoice_bd':
+                c = get_cliente(data.get('cliente', ''))
+                if not c:
+                    await update.message.reply_text(f"❌ No encontré el cliente '{data.get('cliente')}' en la base de datos.")
+                else:
+                    nombre_completo = f"{c['nombre']} {c['apellidos']}".strip()
+                    domicilio = f"{c['direccion']}, {c['cp']} {c['poblacion']}"
+                    num_factura = siguiente_num_factura()
+                    base = data['base_imponible']
+                    iva  = data.get('iva', 21)
+                    ret  = data.get('retencion', 0)
+                    if not data.get('es_base', True):
+                        factor = 1 + iva/100 - ret/100
+                        base   = round(base / factor, 2)
+                    pdf_bytes, total = generar_factura(
+                        num_factura=num_factura, cliente_nombre=nombre_completo,
+                        cliente_nif=c['nif'], cliente_domicilio=domicilio,
+                        concepto=data['concepto'], base_imponible=base, iva=iva, retencion=ret
+                    )
+                    tz = pytz.timezone(TIMEZONE)
+                    fecha = datetime.now(tz).strftime('%Y-%m-%d')
+                    iva_amount = round(base * iva / 100, 2)
+                    ret_amount = round(base * ret / 100, 2)
+                    fila = [num_factura, c['id'], nombre_completo, fecha, data['concepto'],
+                            str(base), str(iva_amount), str(ret_amount), str(round(total, 2)), 'Emitida', '']
+                    sheets_append('Facturas', fila)
+                    num_safe    = num_factura.replace('/', '-').replace(' ', '')
+                    pdf_name    = f"Factura_{num_safe}_{nombre_completo.replace(' ','_')}.pdf"
+                    email_dest  = c['email'] if c['email'] else GMAIL_USER
+                    body_email  = f"Adjunto la factura núm. {num_factura} por importe de {total:.2f} €."
+                    ok = send_email_with_pdf(email_dest, f"Factura {num_factura} — AP Estudio Jurídico", body_email, pdf_bytes, pdf_name)
+                    if ok:
+                        await update.message.reply_text(
+                            f"✅ Factura {num_factura} creada y enviada a {email_dest}\n"
+                            f"Cliente: {nombre_completo}\nTotal: {total:.2f} €"
+                        )
+                    else:
+                        await update.message.reply_text(f"✅ Factura {num_factura} creada (error al enviar email)\nTotal: {total:.2f} €")
+
             else:
                 response_text = data.get('response', raw)
                 # Si la respuesta es un JSON, procesarlo de nuevo
