@@ -868,7 +868,8 @@ MÚLTIPLES ACCIONES: Si el abogado pide varias cosas en un mensaje, responde con
 
 Reglas BD:
 - Cuando pida datos de cliente, caso o factura usa acciones BD
-- Si pide factura y el cliente está en BD usa create_invoice_bd
+- CRÍTICO: Si pide factura y menciona un nombre de cliente, USA SIEMPRE create_invoice_bd. NUNCA pidas el domicilio ni el número de factura — el sistema los obtiene automáticamente de la BD.
+- NUNCA uses create_invoice si el cliente puede estar en la BD. Usa SIEMPRE create_invoice_bd con el nombre del cliente.
 - Si pide añadir cliente o caso, recoge los datos con action:none antes
 """
 
