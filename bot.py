@@ -452,10 +452,11 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
         </body></html>"""
         msg.attach(MIMEText(html_body, 'html', 'utf-8'))
 
-        part = MIMEBase('application', 'octet-stream')
+        part = MIMEBase('application', 'pdf')
         part.set_payload(pdf_bytes)
         encoders.encode_base64(part)
-        part.add_header('Content-Disposition', f'attachment; filename="{pdf_filename}"')
+        part.add_header('Content-Disposition', 'attachment', filename=pdf_filename)
+        part.add_header('Content-Type', 'application/pdf', name=pdf_filename)
         msg.attach(part)
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
@@ -620,15 +621,16 @@ def siguiente_id_cliente():
     return max(ids) + 1 if ids else 1
 
 def siguiente_num_factura():
-    rows = sheets_read("Facturas!A2:A200")
+    """Lee todas las facturas y devuelve el siguiente número correlativo (solo número)."""
+    rows = sheets_read("Facturas!C2:C200")  # Columna C = Numero factura
     nums = []
     for r in rows:
         if r and r[0]:
             try:
-                nums.append(int(r[0].split('/')[0].strip()))
+                nums.append(int(str(r[0]).strip()))
             except:
                 pass
-    return f"{max(nums) + 1 if nums else 1}/{datetime.now().year}"
+    return str(max(nums) + 1 if nums else 1)
 
 def get_bbdd_context():
     try:
@@ -1342,9 +1344,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     msg = titulo + "\n\n"
                     total_pend = 0
                     for f in facturas:
-                        msg += f"• {f['num']} — {f['cliente']} | {f['total']} € | {f['estado']}\n"
+                        msg += f"• Fac.{f['num']} — {f['cliente']} | {f['total']} € | {f['estado']}\n"
                         try:
-                            total_pend += float(str(f['total']).replace(',','.'))
+                            total_pend += float(str(f['total']).replace(',','.').replace('€','').strip())
                         except:
                             pass
                     if estado and 'pendiente' in estado.lower():
@@ -1352,15 +1354,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text(msg)
 
             elif action == 'cobrar_factura':
-                rows = sheets_read("Facturas!A2:K200")
-                num_buscar = normalizar(data.get('num_factura', '').strip())
+                rows = sheets_read("Facturas!A2:N200")
+                num_buscar = str(data.get('num_factura', '')).strip()
                 encontrado = False
                 tz = pytz.timezone(TIMEZONE)
                 fecha_cobro = data.get('fecha_cobro', datetime.now(tz).strftime('%Y-%m-%d'))
                 for i, row in enumerate(rows, 2):
-                    if row and normalizar(row[0].strip()) == num_buscar:
-                        sheets_update_cell(f"Facturas!J{i}", "Cobrada")
-                        sheets_update_cell(f"Facturas!K{i}", fecha_cobro)
+                    # Buscar por columna C (num factura) o columna A (id)
+                    num_fila = str(row[2]).strip() if len(row) > 2 else ''
+                    if row and (num_fila == num_buscar or str(row[0]).strip() == num_buscar):
+                        sheets_update_cell(f"Facturas!M{i}", "Cobrada")
                         encontrado = True
                         break
                 if encontrado:
@@ -1391,8 +1394,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     fecha = datetime.now(tz).strftime('%Y-%m-%d')
                     iva_amount = round(base * iva / 100, 2)
                     ret_amount = round(base * ret / 100, 2)
-                    fila = [num_factura, c['id'], nombre_completo, fecha, data['concepto'],
-                            str(base), str(iva_amount), str(ret_amount), str(round(total, 2)), 'Emitida', '']
+                    # Columnas: A=Id_auto, B=Fecha, C=NumFac, D=Pendiente, E=Cliente, F=NIF,
+                    # G=Base, H=IVA, I=IRPF, J=Total, K='', L='', M=EstadoCobro, N=Serie
+                    # Obtener siguiente ID
+                    id_rows = sheets_read("Facturas!A2:A200")
+                    ids = [int(str(r[0]).strip()) for r in id_rows if r and str(r[0]).strip().isdigit()]
+                    nuevo_id = max(ids) + 1 if ids else 1
+                    fila = [str(nuevo_id), fecha, num_factura, '0',
+                            nombre_completo, c['nif'],
+                            str(base), str(iva_amount), str(ret_amount), str(round(total, 2)),
+                            '', '', 'Emitida', 'ORDINARIA']
                     sheets_append('Facturas', fila)
                     num_safe    = num_factura.replace('/', '-').replace(' ', '')
                     pdf_name    = f"Factura_{num_safe}_{nombre_completo.replace(' ','_')}.pdf"
