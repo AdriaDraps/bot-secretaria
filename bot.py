@@ -402,11 +402,18 @@ def generar_factura(num_factura, cliente_nombre, cliente_nif, cliente_domicilio,
     # Pie
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
     story.append(Spacer(1, 0.2*cm))
-    story.append(Paragraph('Forma de pago: Transferencia bancaria', estilos['pequeño']))
+    story.append(Paragraph('Los honorarios devengados deberán abonarse en el siguiente número de cuenta:', estilos['pequeño']))
     story.append(Paragraph('IBAN: ES10 1563 2626 3132 6989 1055', estilos['pequeño']))
 
     doc.build(story)
     return buffer.getvalue(), total
+
+
+def encode_subject(subject):
+    """Codifica el asunto del email en base64 UTF-8 para evitar caracteres corruptos."""
+    import base64 as _b64
+    encoded = _b64.b64encode(subject.encode('utf-8')).decode('ascii')
+    return f'=?utf-8?b?{encoded}?='
 
 def send_email(to_addr, subject, body_text):
     try:
@@ -425,8 +432,7 @@ def send_email(to_addr, subject, body_text):
             + '<div style="margin-top:30px;padding-top:15px;border-top:1px solid #ddd;font-size:0.85em;color:#666;">'
             + '<em>Secretar\u00eda \u2014 AP Estudio Jur\u00eddico</em></div></body></html>')
         msg = MIMEText(html_body, 'html', 'utf-8')
-        from email.header import Header
-        msg['Subject'] = Header(subject, 'utf-8').encode()
+        msg['Subject'] = encode_subject(subject)
         msg['From']    = GMAIL_USER
         msg['To']      = to_addr
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
@@ -444,8 +450,7 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
         if not service:
             return False
         msg = MIMEMultipart()
-        from email.header import Header
-        msg['Subject'] = Header(subject, 'utf-8').encode()
+        msg['Subject'] = encode_subject(subject)
         msg['From']    = GMAIL_USER
         msg['To']      = to_addr
         formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', body_text)
@@ -1325,7 +1330,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 num_safe     = data['num_factura'].replace('/', '-').replace(' ', '')
                 cliente_safe = data['cliente_nombre'].replace(' ', '_').encode('ascii', 'ignore').decode()
                 pdf_name     = f"Factura_{num_safe}_{cliente_safe}.pdf"
-                body_email   = f"Adjunto encontrará la factura núm. {data['num_factura']} por importe de {total:.2f} €."
+                body_email   = "Estimado/a cliente,\n\nLe adjunto la factura por los servicios prestados por este despacho.\n\nSaludos cordiales,\nAP Estudio Jurídico"
                 ok = send_email_with_pdf(
                     data['cliente_email'],
                     f"Factura {data['num_factura']} — AP Estudio Jurídico",
@@ -1510,7 +1515,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     num_safe    = num_factura.replace('/', '-').replace(' ', '')
                     pdf_name    = f"Factura_{num_safe}_{nombre_completo.replace(' ','_')}.pdf"
                     email_dest  = c['email'].strip() if c.get('email','').strip() else None
-                    body_email  = f"Adjunto la factura núm. {num_factura} por importe de {total:.2f} €."
+                    body_email  = "Estimado/a cliente,\n\nLe adjunto la factura por los servicios prestados por este despacho.\n\nSaludos cordiales,\nAP Estudio Jurídico"
                     if email_dest:
                         ok = send_email_with_pdf(email_dest, f"Factura {num_factura} — AP Estudio Jurídico", body_email, pdf_bytes, pdf_name)
                         if ok:
