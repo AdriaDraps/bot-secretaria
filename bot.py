@@ -446,10 +446,15 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
 
         formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', body_text)
         formatted = formatted.replace('\n', '<br>')
-        html_body = f"""<html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;">
-          <div>{formatted}</div>
-          <div style="margin-top:20px;font-size:0.85em;color:#666;"><em>AP Estudio Jurídico</em></div>
-        </body></html>"""
+        html_body = (
+            '<html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;">'
+            f'<div style="text-align:center;margin-bottom:24px;">'  
+            f'<img src="data:image/png;base64,{LOGO_B64}" alt="AP Estudio Juridico" style="height:80px;width:auto;"/>'
+            '</div>'
+            f'<div>{formatted}</div>'
+            '<hr style="border:none;border-top:1px solid #ddd;margin:24px 0;">'
+            '<div style="font-size:0.85em;color:#666;text-align:center;"><em>AP Estudio Juridico</em></div>'
+            '</body></html>')
         msg.attach(MIMEText(html_body, 'html', 'utf-8'))
 
         part = MIMEBase('application', 'pdf')
@@ -816,8 +821,9 @@ Para marcar tarea como completada:
 Para crear factura:
 {{"action":"create_invoice","num_factura":"14/ 2026","cliente_nombre":"Nombre Cliente","cliente_nif":"12345678A","cliente_domicilio":"Dirección completa","cliente_email":"cliente@email.com","concepto":"Descripción del servicio","base_imponible":500.00,"es_base":true,"iva":21,"retencion":0}}
 
-- "es_base":true si el importe indicado es la base imponible
-- "es_base":false si el importe indicado es el total a pagar (calculará la base)
+- "es_base":true si el usuario dice "base", "honorarios" o no especifica (por defecto)
+- "es_base":false si el usuario dice "total", "importe total", "en total" o "que el total sea X€" — en ese caso X es el total con IVA y el sistema calculará la base
+- CRÍTICO: si el usuario dice "que el total sea 40€" → es_base:false, base_imponible:40
 - "retencion" SOLO se añade si el abogado lo indica expresamente. Por defecto siempre es 0, nunca asumas retención
 
 Para cualquier otra respuesta conversacional:
@@ -854,6 +860,7 @@ Para actualizar estado caso: {"action":"update_caso_estado","autos":"PA 1/2026",
 Para consultar facturas: {"action":"query_facturas","estado":"Pendiente"}
 Para marcar factura cobrada: {"action":"cobrar_factura","num_factura":"1/2026","fecha_cobro":"YYYY-MM-DD"}
 Para crear factura con datos BD: {"action":"create_invoice_bd","cliente":"nombre","concepto":"","base_imponible":500.00,"es_base":true,"iva":21,"retencion":0}
+- Igual que create_invoice: si el usuario dice "total X€" usar es_base:false y base_imponible:X
 
 MÚLTIPLES ACCIONES: Si el abogado pide varias cosas en un mensaje, responde con varios JSON seguidos, uno por línea. Ejemplo:
 {"action":"create_event","summary":"...","date":"...","time":"...","duration_hours":1,"description":""}
