@@ -301,6 +301,113 @@ def format_events(events):
 # ─────────────────────────────────────────────
 # GMAIL API
 # ─────────────────────────────────────────────
+
+# ─────────────────────────────────────────────
+# GENERACIÓN DE FACTURAS PDF
+# ─────────────────────────────────────────────
+def generar_factura(num_factura, cliente_nombre, cliente_nif, cliente_domicilio,
+                    concepto, base_imponible, iva=21, retencion=0):
+    """Genera una factura en PDF y devuelve (bytes, total)."""
+    import io
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            rightMargin=2*cm, leftMargin=2*cm,
+                            topMargin=2*cm, bottomMargin=2*cm)
+    story = []
+    estilos = {
+        'normal':  ParagraphStyle('normal',  fontName='Helvetica',      fontSize=10, leading=14),
+        'negrita': ParagraphStyle('negrita', fontName='Helvetica-Bold',  fontSize=10, leading=14),
+        'titulo':  ParagraphStyle('titulo',  fontName='Helvetica-Bold',  fontSize=16, leading=20, spaceAfter=6),
+        'derecha': ParagraphStyle('derecha', fontName='Helvetica',       fontSize=10, leading=14, alignment=TA_RIGHT),
+        'der_bold':ParagraphStyle('der_bold',fontName='Helvetica-Bold',  fontSize=10, leading=14, alignment=TA_RIGHT),
+        'pequeño': ParagraphStyle('pequeño', fontName='Helvetica',       fontSize=8,  leading=12, textColor=colors.grey),
+        'center':  ParagraphStyle('center',  fontName='Helvetica',       fontSize=10, leading=14, alignment=TA_CENTER),
+    }
+    normal   = estilos['normal']
+    negrita  = estilos['negrita']
+    derecha  = estilos['derecha']
+    der_bold = estilos['der_bold']
+
+    # Cabecera
+    story.append(Paragraph('<b>AP ESTUDIO JURÍDICO</b>', estilos['titulo']))
+    story.append(Paragraph('Adrià Paños Ruiz — NIF: 47182626N', normal))
+    story.append(Paragraph('Carrer Comte Ramon Berenguer 1-3, esc. B, 2º 1ª', normal))
+    story.append(Paragraph('08204 Sabadell (Barcelona)', normal))
+    story.append(Paragraph('Tel: 603690659', normal))
+    story.append(Spacer(1, 0.4*cm))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.black))
+    story.append(Spacer(1, 0.4*cm))
+
+    # Número de factura y fecha
+    import pytz as _pytz
+    from datetime import datetime as _dt
+    tz = _pytz.timezone(TIMEZONE)
+    fecha_emision = _dt.now(tz).strftime('%d/%m/%Y')
+    story.append(Paragraph(f'<b>FACTURA N.º {num_factura}</b>', negrita))
+    story.append(Paragraph(f'Fecha de emisión: {fecha_emision}', normal))
+    story.append(Spacer(1, 0.4*cm))
+
+    # Datos cliente
+    story.append(Paragraph('<b>DATOS DEL CLIENTE</b>', negrita))
+    story.append(Paragraph(cliente_nombre, normal))
+    story.append(Paragraph(f'NIF/CIF: {cliente_nif}', normal))
+    story.append(Paragraph(cliente_domicilio, normal))
+    story.append(Spacer(1, 0.4*cm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+    story.append(Spacer(1, 0.4*cm))
+
+    # Tabla de conceptos
+    tabla_data = [
+        [Paragraph('<b>CONCEPTO</b>', negrita), Paragraph('<b>IMPORTE</b>', der_bold)],
+        [Paragraph(concepto, normal), Paragraph(f'{base_imponible:.2f} €', derecha)],
+    ]
+    tabla = Table(tabla_data, colWidths=[13*cm, 4*cm])
+    tabla.setStyle(TableStyle([
+        ('GRID',        (0,0), (-1,-1), 0.5, colors.grey),
+        ('BACKGROUND',  (0,0), (-1,0),  colors.lightgrey),
+        ('VALIGN',      (0,0), (-1,-1), 'TOP'),
+        ('TOPPADDING',  (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING',(0,0),(-1,-1), 6),
+    ]))
+    story.append(tabla)
+    story.append(Spacer(1, 0.3*cm))
+
+    # Totales
+    iva_importe   = round(base_imponible * iva / 100, 2)
+    retencion_imp = round(base_imponible * retencion / 100, 2)
+    total         = round(base_imponible + iva_importe - retencion_imp, 2)
+
+    totales_data = [
+        [Paragraph('<b>Base imponible</b>', negrita),        Paragraph(f'{base_imponible:.2f} €', der_bold)],
+        [Paragraph(f'IVA ({iva}%)', normal),                 Paragraph(f'{iva_importe:.2f} €', derecha)],
+    ]
+    if retencion > 0:
+        totales_data.append([
+            Paragraph(f'Retención IRPF ({retencion}%)', normal),
+            Paragraph(f'-{retencion_imp:.2f} €', derecha)
+        ])
+    totales_data.append([
+        Paragraph('<b>TOTAL HONORARIOS</b>', negrita),
+        Paragraph(f'<b>{total:.2f} €</b>', der_bold)
+    ])
+    tabla_tot = Table(totales_data, colWidths=[13*cm, 4*cm])
+    tabla_tot.setStyle(TableStyle([
+        ('LINEABOVE', (0,-1), (-1,-1), 1, colors.black),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(tabla_tot)
+    story.append(Spacer(1, 1*cm))
+
+    # Pie
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph('Forma de pago: Transferencia bancaria', estilos['pequeño']))
+    story.append(Paragraph('IBAN: ES10 1563 2626 3132 6989 1055', estilos['pequeño']))
+
+    doc.build(story)
+    return buffer.getvalue(), total
+
 def send_email(to_addr, subject, body_text):
     try:
         service = get_gmail_service()
@@ -318,7 +425,8 @@ def send_email(to_addr, subject, body_text):
             + '<div style="margin-top:30px;padding-top:15px;border-top:1px solid #ddd;font-size:0.85em;color:#666;">'
             + '<em>Secretar\u00eda \u2014 AP Estudio Jur\u00eddico</em></div></body></html>')
         msg = MIMEText(html_body, 'html', 'utf-8')
-        msg['Subject'] = subject
+        from email.header import Header
+        msg['Subject'] = Header(subject, 'utf-8').encode()
         msg['From']    = GMAIL_USER
         msg['To']      = to_addr
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
@@ -336,7 +444,8 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
         if not service:
             return False
         msg = MIMEMultipart()
-        msg['Subject'] = subject
+        from email.header import Header
+        msg['Subject'] = Header(subject, 'utf-8').encode()
         msg['From']    = GMAIL_USER
         msg['To']      = to_addr
         formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', body_text)
