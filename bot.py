@@ -481,45 +481,18 @@ def get_sheets_service():
         logger.error(f"Error conectando Sheets: {e}")
         return None
 
-def get_sheet_names():
-    """Obtiene los nombres reales de las hojas del spreadsheet."""
-    try:
-        svc = get_sheets_service()
-        if not svc:
-            return {}
-        meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
-        sheets = meta.get('sheets', [])
-        names = {}
-        for s in sheets:
-            title = s['properties']['title']
-            title_lower = title.lower().replace('á','a').replace('é','e').replace('í','i').replace('ó','o').replace('ú','u')
-            names[title_lower] = title
-        return names
-    except Exception as e:
-        logger.error(f"get_sheet_names error: {e}")
-        return {}
-
-def resolve_sheet_name(nombre_base):
-    """Resuelve el nombre real de una hoja dada su nombre base."""
-    nombres = get_sheet_names()
-    nombre_norm = nombre_base.lower().replace('á','a').replace('é','e').replace('í','i').replace('ó','o').replace('ú','u')
-    return nombres.get(nombre_norm, nombre_base)
-
 def sheets_read(rango):
     try:
         svc = get_sheets_service()
         if not svc:
             return []
-        # Resolver nombre real de la hoja
         if '!' in rango:
             hoja, celdas = rango.split('!', 1)
-            hoja_real = resolve_sheet_name(hoja)
-            rango_real = f"{hoja_real}!{celdas}"
-        else:
-            rango_real = rango
-        result = svc.spreadsheets().values().get(
-            spreadsheetId=SHEETS_ID, range=rango_real
-        ).execute()
+            meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
+            hojas_reales = {s['properties']['title'].lower(): s['properties']['title'] for s in meta.get('sheets', [])}
+            hoja_real = hojas_reales.get(hoja.lower(), hoja)
+            rango = f"{hoja_real}!{celdas}"
+        result = svc.spreadsheets().values().get(spreadsheetId=SHEETS_ID, range=rango).execute()
         return result.get('values', [])
     except Exception as e:
         logger.error(f"sheets_read error: {e}")
@@ -530,12 +503,12 @@ def sheets_append(hoja, valores):
         svc = get_sheets_service()
         if not svc:
             return False
-        hoja_real = resolve_sheet_name(hoja)
+        meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
+        hojas_reales = {s['properties']['title'].lower(): s['properties']['title'] for s in meta.get('sheets', [])}
+        hoja_real = hojas_reales.get(hoja.lower(), hoja)
         svc.spreadsheets().values().append(
-            spreadsheetId=SHEETS_ID,
-            range=f"{hoja_real}!A1",
-            valueInputOption='USER_ENTERED',
-            body={'values': [valores]}
+            spreadsheetId=SHEETS_ID, range=f"{hoja_real}!A1",
+            valueInputOption='USER_ENTERED', body={'values': [valores]}
         ).execute()
         return True
     except Exception as e:
@@ -549,15 +522,13 @@ def sheets_update_cell(rango, valor):
             return False
         if '!' in rango:
             hoja, celdas = rango.split('!', 1)
-            hoja_real = resolve_sheet_name(hoja)
-            rango_real = f"{hoja_real}!{celdas}"
-        else:
-            rango_real = rango
+            meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
+            hojas_reales = {s['properties']['title'].lower(): s['properties']['title'] for s in meta.get('sheets', [])}
+            hoja_real = hojas_reales.get(hoja.lower(), hoja)
+            rango = f"{hoja_real}!{celdas}"
         svc.spreadsheets().values().update(
-            spreadsheetId=SHEETS_ID,
-            range=rango_real,
-            valueInputOption='USER_ENTERED',
-            body={'values': [[valor]]}
+            spreadsheetId=SHEETS_ID, range=rango,
+            valueInputOption='USER_ENTERED', body={'values': [[valor]]}
         ).execute()
         return True
     except Exception as e:
@@ -565,14 +536,13 @@ def sheets_update_cell(rango, valor):
         return False
 
 def get_cliente(nombre):
-    """Busca un cliente por nombre (parcial, sin distinción mayúsculas)."""
     rows = sheets_read("Clientes!A2:L100")
     nombre_lower = nombre.lower()
     for row in rows:
         if len(row) < 2:
             continue
         nombre_completo = f"{row[1]} {row[2]}".lower() if len(row) > 2 else row[1].lower()
-        if nombre_lower in nombre_completo or nombre_lower in (row[1].lower() if len(row) > 1 else ''):
+        if nombre_lower in nombre_completo or nombre_lower in row[1].lower():
             return {
                 'id': row[0] if len(row) > 0 else '',
                 'nombre': row[1] if len(row) > 1 else '',
@@ -595,13 +565,11 @@ def get_todos_clientes():
     for row in rows:
         if len(row) >= 2 and row[0]:
             nombre = f"{row[1]} {row[2]}".strip() if len(row) > 2 else row[1]
-            clientes.append({
-                'id': row[0], 'nombre': nombre,
+            clientes.append({'id': row[0], 'nombre': nombre,
                 'nif': row[3] if len(row) > 3 else '',
                 'email': row[4] if len(row) > 4 else '',
                 'telefono': row[5] if len(row) > 5 else '',
-                'tipo': row[9] if len(row) > 9 else '',
-            })
+                'tipo': row[9] if len(row) > 9 else ''})
     return clientes
 
 def get_casos_cliente(nombre_cliente=None):
@@ -610,25 +578,18 @@ def get_casos_cliente(nombre_cliente=None):
     for row in rows:
         if not row or not row[0]:
             continue
-        if nombre_cliente:
-            cliente_row = (row[2] if len(row) > 2 else '').lower()
-            if nombre_cliente.lower() not in cliente_row:
-                continue
+        if nombre_cliente and nombre_cliente.lower() not in (row[2] if len(row) > 2 else '').lower():
+            continue
         casos.append({
-            'id': row[0] if len(row) > 0 else '',
-            'cliente': row[2] if len(row) > 2 else '',
-            'tipo': row[3] if len(row) > 3 else '',
-            'materia': row[4] if len(row) > 4 else '',
-            'descripcion': row[5] if len(row) > 5 else '',
-            'juzgado': row[6] if len(row) > 6 else '',
-            'autos': row[7] if len(row) > 7 else '',
-            'estado': row[8] if len(row) > 8 else '',
+            'id': row[0], 'cliente': row[2] if len(row) > 2 else '',
+            'tipo': row[3] if len(row) > 3 else '', 'materia': row[4] if len(row) > 4 else '',
+            'descripcion': row[5] if len(row) > 5 else '', 'juzgado': row[6] if len(row) > 6 else '',
+            'autos': row[7] if len(row) > 7 else '', 'estado': row[8] if len(row) > 8 else '',
             'fecha_apertura': row[9] if len(row) > 9 else '',
             'proxima_actuacion': row[10] if len(row) > 10 else '',
             'fecha_actuacion': row[11] if len(row) > 11 else '',
             'honorarios': row[12] if len(row) > 12 else '',
-            'cobrado': row[13] if len(row) > 13 else '',
-        })
+            'cobrado': row[13] if len(row) > 13 else ''})
     return casos
 
 def get_facturas(estado=None):
@@ -641,15 +602,10 @@ def get_facturas(estado=None):
         if estado and estado.lower() not in est.lower():
             continue
         facturas.append({
-            'num': row[0],
-            'cliente': row[2] if len(row) > 2 else '',
-            'fecha': row[3] if len(row) > 3 else '',
-            'concepto': row[4] if len(row) > 4 else '',
-            'base': row[5] if len(row) > 5 else '',
-            'total': row[8] if len(row) > 8 else '',
-            'estado': est,
-            'fecha_cobro': row[10] if len(row) > 10 else '',
-        })
+            'num': row[0], 'cliente': row[2] if len(row) > 2 else '',
+            'fecha': row[3] if len(row) > 3 else '', 'concepto': row[4] if len(row) > 4 else '',
+            'base': row[5] if len(row) > 5 else '', 'total': row[8] if len(row) > 8 else '',
+            'estado': est, 'fecha_cobro': row[10] if len(row) > 10 else ''})
     return facturas
 
 def siguiente_id_cliente():
@@ -659,45 +615,34 @@ def siguiente_id_cliente():
 
 def siguiente_num_factura():
     rows = sheets_read("Facturas!A2:A100")
-    year = datetime.now().year
     nums = []
     for r in rows:
         if r and r[0]:
             try:
-                n = int(r[0].split('/')[0].strip())
-                nums.append(n)
+                nums.append(int(r[0].split('/')[0].strip()))
             except:
                 pass
-    siguiente = max(nums) + 1 if nums else 1
-    return f"{siguiente}/{year}"
+    return f"{max(nums) + 1 if nums else 1}/{datetime.now().year}"
 
 def get_bbdd_context():
-    """Genera un resumen de la BD para el contexto de Claude."""
     try:
         clientes = get_todos_clientes()
-        casos_activos = get_casos_cliente()
+        casos = get_casos_cliente()
         facturas_pend = get_facturas(estado='Pendiente')
-
         ctx = f"BASE DE DATOS DEL DESPACHO:\n"
-        ctx += f"- {len(clientes)} clientes registrados\n"
-        ctx += f"- {len(casos_activos)} casos activos\n"
-        ctx += f"- {len(facturas_pend)} facturas pendientes de cobro\n\n"
-
+        ctx += f"- {len(clientes)} clientes, {len(casos)} casos, {len(facturas_pend)} facturas pendientes\n\n"
         if clientes:
             ctx += "CLIENTES:\n"
             for c in clientes[:20]:
-                ctx += f"  • [{c['id']}] {c['nombre']} | NIF: {c['nif']} | Email: {c['email']} | Tel: {c['telefono']}\n"
-
-        if casos_activos:
+                ctx += f"  [{c['id']}] {c['nombre']} | NIF: {c['nif']} | Email: {c['email']} | Tel: {c['telefono']}\n"
+        if casos:
             ctx += "\nCASOS:\n"
-            for c in casos_activos[:20]:
-                ctx += f"  • [{c['id']}] {c['cliente']} — {c['materia']} | {c['autos']} | Estado: {c['estado']} | Próx. act.: {c['proxima_actuacion']} ({c['fecha_actuacion']})\n"
-
+            for c in casos[:20]:
+                ctx += f"  [{c['id']}] {c['cliente']} — {c['materia']} | {c['autos']} | {c['estado']} | Próx: {c['proxima_actuacion']} ({c['fecha_actuacion']})\n"
         if facturas_pend:
             ctx += "\nFACTURAS PENDIENTES:\n"
             for f in facturas_pend:
-                ctx += f"  • {f['num']} | {f['cliente']} | {f['total']} € | {f['concepto'][:40]}\n"
-
+                ctx += f"  {f['num']} | {f['cliente']} | {f['total']} € | {f['concepto'][:40]}\n"
         return ctx
     except Exception as e:
         logger.error(f"Error get_bbdd_context: {e}")
@@ -761,40 +706,25 @@ Reglas:
 - Para emails al procurador u otros contactos del despacho, redacta el cuerpo de forma formal
 - Para facturas, si falta num_factura, cliente_nif, cliente_domicilio o concepto, pídelos con action:none
 
-ACCIONES BASE DE DATOS (Google Sheets):
+ACCIONES BASE DE DATOS:
+Para buscar cliente: {"action":"query_cliente","nombre":"nombre"}
+Para listar clientes: {"action":"query_clientes"}
+Para añadir cliente: {"action":"add_cliente","nombre":"","apellidos":"","nif":"","email":"","telefono":"","direccion":"","poblacion":"","cp":"","tipo":"Particular","notas":""}
+Para consultar casos: {"action":"query_casos","cliente":"nombre opcional"}
+Para añadir caso: {"action":"add_caso","id_cliente":"","cliente":"","tipo":"","materia":"","descripcion":"","juzgado":"","autos":"","estado":"","proxima_actuacion":"","fecha_actuacion":"YYYY-MM-DD","honorarios":"","cobrado":"0"}
+Para actualizar estado caso: {"action":"update_caso_estado","autos":"PA 1/2026","estado":"","proxima_actuacion":"","fecha_actuacion":"YYYY-MM-DD"}
+Para consultar facturas: {"action":"query_facturas","estado":"Pendiente"}
+Para marcar factura cobrada: {"action":"cobrar_factura","num_factura":"1/2026","fecha_cobro":"YYYY-MM-DD"}
+Para crear factura con datos BD: {"action":"create_invoice_bd","cliente":"nombre","concepto":"","base_imponible":500.00,"es_base":true,"iva":21,"retencion":0}
 
-Para buscar cliente:
-{{"action":"query_cliente","nombre":"nombre del cliente"}}
-
-Para listar todos los clientes:
-{{"action":"query_clientes"}}
-
-Para añadir cliente nuevo:
-{{"action":"add_cliente","nombre":"Nombre","apellidos":"Apellidos","nif":"12345678A","email":"email@x.com","telefono":"600000000","direccion":"Calle X","poblacion":"Sabadell","cp":"08204","tipo":"Particular","notas":""}}
-
-Para consultar casos (de un cliente o todos):
-{{"action":"query_casos","cliente":"nombre opcional"}}
-
-Para añadir caso nuevo:
-{{"action":"add_caso","id_cliente":"1","cliente":"Nombre","tipo":"Penal","materia":"Descripción","descripcion":"Detalle","juzgado":"Juzgado X","autos":"PA 1/2026","estado":"En instrucción","proxima_actuacion":"Vista oral","fecha_actuacion":"YYYY-MM-DD","honorarios":"1500","cobrado":"0"}}
-
-Para actualizar estado de un caso:
-{{"action":"update_caso_estado","autos":"PA 1/2026","estado":"Nuevo estado","proxima_actuacion":"próxima actuación","fecha_actuacion":"YYYY-MM-DD"}}
-
-Para consultar facturas (todas, pendientes, cobradas):
-{{"action":"query_facturas","estado":"Pendiente"}}
-
-Para marcar factura como cobrada:
-{{"action":"cobrar_factura","num_factura":"1/2026","fecha_cobro":"YYYY-MM-DD"}}
-
-Para crear factura usando datos de la BD (rellena NIF, email, dirección automáticamente):
-{{"action":"create_invoice_bd","cliente":"nombre del cliente","concepto":"descripción","base_imponible":500.00,"es_base":true,"iva":21,"retencion":0}}
+MÚLTIPLES ACCIONES: Si el abogado pide varias cosas en un mensaje, responde con varios JSON seguidos, uno por línea. Ejemplo:
+{"action":"create_event","summary":"...","date":"...","time":"...","duration_hours":1,"description":""}
+{"action":"create_task","title":"...","notes":""}
 
 Reglas BD:
-- Cuando el abogado pida datos de un cliente, caso o factura, usa las acciones de BD
-- Si pide crear una factura y el cliente está en la BD, usa create_invoice_bd (rellena los datos automáticamente)
-- Si pide el siguiente número de factura, dile cuál es sin preguntar
-- Si pide añadir un cliente o caso, recoge los datos necesarios con action:none antes de añadir
+- Cuando pida datos de cliente, caso o factura usa acciones BD
+- Si pide factura y el cliente está en BD usa create_invoice_bd
+- Si pide añadir cliente o caso, recoge los datos con action:none antes
 """
 
 def ask_claude(user_msg, calendar_context=""):
@@ -805,7 +735,6 @@ def ask_claude(user_msg, calendar_context=""):
     system  = SYSTEM_PROMPT.replace('{today}', today).replace('{weekday}', weekday)
 
     content = user_msg
-    # Incluir contexto de BD si el mensaje menciona clientes, casos o facturas
     bd_keywords = ['cliente','clientes','caso','casos','factura','facturas','expediente',
                    'cobrar','pendiente','debe','honorario','autos','juzgado','nif','email',
                    'teléfono','dirección','añade','añadir','nuevo cliente','nuevo caso']
@@ -957,7 +886,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def cmd_bbdd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Diagnóstico: comprueba conexión con Google Sheets."""
     allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
     if allowed_id and str(update.effective_chat.id) != str(allowed_id):
         return
@@ -965,22 +893,20 @@ async def cmd_bbdd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         svc = get_sheets_service()
         if not svc:
-            await update.message.reply_text("❌ No se pudo conectar con Google Sheets (servicio nulo).")
+            await update.message.reply_text("❌ No se pudo conectar (servicio nulo).")
             return
-        # Obtener metadata
         meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
         titulo = meta.get('properties', {}).get('title', '?')
-        hojas  = [s['properties']['title'] for s in meta.get('sheets', [])]
-        # Leer primera fila de cada hoja
-        msg = f"\u2705 Conectado a: *{titulo}*\n\nHojas encontradas:\n"
+        hojas = [s['properties']['title'] for s in meta.get('sheets', [])]
+        msg = f"✅ Conectado a: *{titulo}*\nHojas: {', '.join(hojas)}\n\n"
         for h in hojas:
             try:
                 rows = svc.spreadsheets().values().get(
                     spreadsheetId=SHEETS_ID, range=f"{h}!A2:B5"
                 ).execute().get('values', [])
-                msg += f"\u2022 *{h}*: {len(rows)} filas le\u00eddas\n"
+                msg += f"• *{h}*: {len(rows)} filas\n"
             except Exception as e2:
-                msg += f"\u2022 *{h}*: error\n"
+                msg += f"• *{h}*: error — {e2}\n"
         await update.message.reply_text(msg, parse_mode='Markdown')
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
@@ -1020,371 +946,180 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         raw = ask_claude(user_msg, calendar_ctx)
 
-        json_match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if not json_match:
+        # Extraer todos los bloques JSON (soporte multi-acción)
+        # Buscar tanto JSONs sueltos como dentro de bloques ```json ... ```
+        json_matches = re.findall(r'```json\s*(\{.*?\})\s*```', raw, re.DOTALL)
+        if not json_matches:
+            json_matches = re.findall(r'(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})', raw, re.DOTALL)
+
+        # Texto limpio = raw sin bloques JSON ni ```
+        clean_text = re.sub(r'```json.*?```', '', raw, flags=re.DOTALL)
+        clean_text = re.sub(r'```.*?```', '', clean_text, flags=re.DOTALL)
+        clean_text = re.sub(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', '', clean_text, flags=re.DOTALL)
+        clean_text = clean_text.strip()
+
+        if not json_matches:
             await update.message.reply_text(raw)
             return
 
-        try:
-            data = json.loads(json_match.group())
-        except json.JSONDecodeError:
-            # Try to clean and re-parse
-            cleaned = json_match.group().replace('\\n', '\n')
-            data = json.loads(cleaned)
-        action = data.get('action', 'none')
+        actions_list = []
+        for match in json_matches:
+            try:
+                actions_list.append(json.loads(match))
+            except:
+                pass
 
-        if action == 'create_event':
-            ev = create_event(
-                data['summary'], data['date'], data['time'],
-                data.get('duration_hours', 1), data.get('description', '')
-            )
-            if ev:
-                await update.message.reply_text(
-                    f"✅ Evento creado:\n📌 *{data['summary']}*\n📅 {data['date']} a las {data['time']}",
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text("❌ No se pudo crear el evento.")
+        if not actions_list:
+            await update.message.reply_text(raw)
+            return
 
-        elif action == 'update_event':
-            event = find_event_by_name(data.get('event_name', ''))
-            if event:
-                ev = update_event(
-                    event['id'],
-                    date_str=data.get('date'),
-                    time_str=data.get('time'),
-                    duration_hours=data.get('duration_hours', 1)
+        for data in actions_list:
+            action = data.get('action', 'none')
+
+            if action == 'create_event':
+                ev = create_event(
+                    data['summary'], data['date'], data['time'],
+                    data.get('duration_hours', 1), data.get('description', '')
                 )
                 if ev:
                     await update.message.reply_text(
-                        f"✅ Evento actualizado:\n📌 *{event['summary']}*\n📅 {data.get('date')} a las {data.get('time')}",
+                        f"✅ Evento creado:\n📌 *{data['summary']}*\n📅 {data['date']} a las {data['time']}",
                         parse_mode='Markdown'
                     )
                 else:
-                    await update.message.reply_text("❌ No se pudo actualizar el evento.")
-            else:
-                await update.message.reply_text("❌ No encontré ese evento en los próximos 30 días.")
+                    await update.message.reply_text("❌ No se pudo crear el evento.")
 
-        elif action == 'delete_event':
-            event = find_event_by_name(data.get('event_name', ''))
-            if event:
-                ok = delete_event(event['id'])
+            elif action == 'update_event':
+                event = find_event_by_name(data.get('event_name', ''))
+                if event:
+                    ev = update_event(
+                        event['id'],
+                        date_str=data.get('date'),
+                        time_str=data.get('time'),
+                        duration_hours=data.get('duration_hours', 1)
+                    )
+                    if ev:
+                        await update.message.reply_text(
+                            f"✅ Evento actualizado:\n📌 *{event['summary']}*\n📅 {data.get('date')} a las {data.get('time')}",
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        await update.message.reply_text("❌ No se pudo actualizar el evento.")
+                else:
+                    await update.message.reply_text("❌ No encontré ese evento en los próximos 30 días.")
+
+            elif action == 'delete_event':
+                event = find_event_by_name(data.get('event_name', ''))
+                if event:
+                    ok = delete_event(event['id'])
+                    if ok:
+                        await update.message.reply_text(
+                            f"✅ Evento eliminado: *{event['summary']}*",
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        await update.message.reply_text("❌ No se pudo eliminar el evento.")
+                else:
+                    await update.message.reply_text("❌ No encontré ese evento en los próximos 30 días.")
+
+            elif action == 'query_calendar':
+                days   = data.get('days', 7)
+                events = get_events(days=days)
+                if not events:
+                    await update.message.reply_text(f"📅 No hay eventos en los próximos {days} días.")
+                else:
+                    msg = f"📅 *Agenda — próximos {days} días:*\n\n{format_events(events)}"
+                    await update.message.reply_text(msg, parse_mode='Markdown')
+
+            elif action == 'query_tasks':
+                tasks = get_tasks()
+                msg   = f"📋 *Tareas pendientes:*\n\n{format_tasks(tasks)}"
+                await update.message.reply_text(msg, parse_mode='Markdown')
+
+            elif action == 'create_task':
+                t = create_task(data['title'], data.get('notes',''), data.get('due_date'))
+                if t:
+                    due_txt = f" (vence {data['due_date']})" if data.get('due_date') else ''
+                    await update.message.reply_text(
+                        f"✅ Tarea creada: *{data['title']}*{due_txt}",
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await update.message.reply_text("❌ No se pudo crear la tarea.")
+
+            elif action == 'delete_task':
+                task = find_task_by_name(data.get('task_name',''))
+                if task:
+                    ok = delete_task(task['id'])
+                    if ok:
+                        await update.message.reply_text(
+                            f"✅ Tarea eliminada: *{task['title']}*",
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        await update.message.reply_text("❌ No se pudo eliminar la tarea.")
+                else:
+                    await update.message.reply_text("❌ No encontré esa tarea.")
+
+            elif action == 'complete_task':
+                task = find_task_by_name(data.get('task_name',''))
+                if task:
+                    ok = complete_task(task['id'])
+                    if ok:
+                        await update.message.reply_text(
+                            f"✅ Tarea completada: *{task['title']}*",
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        await update.message.reply_text("❌ No se pudo completar la tarea.")
+                else:
+                    await update.message.reply_text("❌ No encontré esa tarea.")
+
+            elif action == 'send_email':
+                ok = send_email(data['to'], data['subject'], data['body'])
                 if ok:
                     await update.message.reply_text(
-                        f"✅ Evento eliminado: *{event['summary']}*",
-                        parse_mode='Markdown'
+                        f"✅ Email enviado a `{data['to']}`", parse_mode='Markdown'
                     )
                 else:
-                    await update.message.reply_text("❌ No se pudo eliminar el evento.")
-            else:
-                await update.message.reply_text("❌ No encontré ese evento en los próximos 30 días.")
+                    await update.message.reply_text("❌ Error al enviar el email.")
 
-        elif action == 'query_calendar':
-            days   = data.get('days', 7)
-            events = get_events(days=days)
-            if not events:
-                await update.message.reply_text(f"📅 No hay eventos en los próximos {days} días.")
-            else:
-                msg = f"📅 *Agenda — próximos {days} días:*\n\n{format_events(events)}"
-                await update.message.reply_text(msg, parse_mode='Markdown')
-
-        elif action == 'query_tasks':
-            tasks = get_tasks()
-            msg   = f"📋 *Tareas pendientes:*\n\n{format_tasks(tasks)}"
-            await update.message.reply_text(msg, parse_mode='Markdown')
-
-        elif action == 'create_task':
-            t = create_task(data['title'], data.get('notes',''), data.get('due_date'))
-            if t:
-                due_txt = f" (vence {data['due_date']})" if data.get('due_date') else ''
-                await update.message.reply_text(
-                    f"✅ Tarea creada: *{data['title']}*{due_txt}",
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text("❌ No se pudo crear la tarea.")
-
-        elif action == 'delete_task':
-            task = find_task_by_name(data.get('task_name',''))
-            if task:
-                ok = delete_task(task['id'])
-                if ok:
-                    await update.message.reply_text(
-                        f"✅ Tarea eliminada: *{task['title']}*",
-                        parse_mode='Markdown'
-                    )
-                else:
-                    await update.message.reply_text("❌ No se pudo eliminar la tarea.")
-            else:
-                await update.message.reply_text("❌ No encontré esa tarea.")
-
-        elif action == 'complete_task':
-            task = find_task_by_name(data.get('task_name',''))
-            if task:
-                ok = complete_task(task['id'])
-                if ok:
-                    await update.message.reply_text(
-                        f"✅ Tarea completada: *{task['title']}*",
-                        parse_mode='Markdown'
-                    )
-                else:
-                    await update.message.reply_text("❌ No se pudo completar la tarea.")
-            else:
-                await update.message.reply_text("❌ No encontré esa tarea.")
-
-        elif action == 'send_email':
-            ok = send_email(data['to'], data['subject'], data['body'])
-            if ok:
-                await update.message.reply_text(
-                    f"✅ Email enviado a `{data['to']}`", parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text("❌ Error al enviar el email.")
-
-        elif action == 'create_invoice':
-            base = data['base_imponible']
-            iva  = data.get('iva', 21)
-            ret  = data.get('retencion', 0)
-            # Si es total, calcular base
-            if not data.get('es_base', True):
-                factor = 1 + iva/100 - ret/100
-                base   = round(base / factor, 2)
-            pdf_bytes, total = generar_factura(
-                num_factura=data['num_factura'],
-                cliente_nombre=data['cliente_nombre'],
-                cliente_nif=data['cliente_nif'],
-                cliente_domicilio=data['cliente_domicilio'],
-                concepto=data['concepto'],
-                base_imponible=base,
-                iva=iva,
-                retencion=ret
-            )
-            num_safe    = data['num_factura'].replace('/', '-').replace(' ', '')
-            pdf_name    = f"Factura_{num_safe}_{data['cliente_nombre'].replace(' ','_')}.pdf"
-            body_email  = f"Adjunto encontrará la factura núm. {data['num_factura']} por importe de {total:.2f} €."
-            ok = send_email_with_pdf(data['cliente_email'], f"Factura {data['num_factura']} — AP Estudio Jurídico", body_email, pdf_bytes, pdf_name)
-            if ok:
-                await update.message.reply_text(
-                    f"✅ Factura enviada a `{data['cliente_email']}`\n"
-                    f"📄 *{data['num_factura']}* — Total: *{total:.2f} €*",
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text("❌ Error al enviar la factura.")
-
-        elif action == 'query_cliente':
-            c = get_cliente(data.get('nombre',''))
-            if c:
-                nombre_completo = f"{c['nombre']} {c['apellidos']}".strip()
-                msg = (f"👤 *{nombre_completo}*\n"
-                       f"NIF: `{c['nif']}`\n"
-                       f"📧 {c['email']}\n"
-                       f"📱 {c['telefono']}\n"
-                       f"🏠 {c['direccion']}, {c['cp']} {c['poblacion']}\n"
-                       f"Tipo: {c['tipo']}\n"
-                       f"Alta: {c['fecha_alta']}\n"
-                       f"📝 {c['notas']}")
-                await update.message.reply_text(msg, parse_mode='Markdown')
-            else:
-                await update.message.reply_text(f"❌ No encontré el cliente '{data.get('nombre')}'.")
-
-        elif action == 'query_clientes':
-            clientes = get_todos_clientes()
-            if not clientes:
-                await update.message.reply_text("No hay clientes registrados.")
-            else:
-                msg = f"👥 *Clientes del despacho ({len(clientes)}):*\n\n"
-                for c in clientes:
-                    msg += f"• *{c['nombre']}* — {c['tipo']} | {c['email']}\n"
-                await update.message.reply_text(msg, parse_mode='Markdown')
-
-        elif action == 'add_cliente':
-            tz = pytz.timezone(TIMEZONE)
-            fecha_alta = datetime.now(tz).strftime('%Y-%m-%d')
-            nuevo_id = siguiente_id_cliente()
-            fila = [
-                str(nuevo_id),
-                data.get('nombre',''), data.get('apellidos',''),
-                data.get('nif',''), data.get('email',''),
-                data.get('telefono',''), data.get('direccion',''),
-                data.get('poblacion',''), data.get('cp',''),
-                data.get('tipo','Particular'), fecha_alta,
-                data.get('notas','')
-            ]
-            ok = sheets_append('Clientes', fila)
-            if ok:
-                nombre = f"{data.get('nombre','')} {data.get('apellidos','')}".strip()
-                await update.message.reply_text(
-                    f"✅ Cliente añadido: *{nombre}* (ID: {nuevo_id})",
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text("❌ Error al añadir el cliente.")
-
-        elif action == 'query_casos':
-            casos = get_casos_cliente(data.get('cliente'))
-            if not casos:
-                await update.message.reply_text("No hay casos registrados.")
-            else:
-                nombre_filtro = data.get('cliente','')
-                titulo = f"📁 *Casos de {nombre_filtro}:*" if nombre_filtro else f"📁 *Todos los casos ({len(casos)}):*"
-                msg = titulo + "\n\n"
-                for c in casos:
-                    msg += (f"• *{c['cliente']}* — {c['materia']}\n"
-                            f"  {c['autos']} | {c['estado']}\n"
-                            f"  Próx: {c['proxima_actuacion']} ({c['fecha_actuacion']})\n\n")
-                await update.message.reply_text(msg, parse_mode='Markdown')
-
-        elif action == 'add_caso':
-            rows = sheets_read("Casos!A2:A100")
-            ids  = [int(r[0]) for r in rows if r and r[0].isdigit()]
-            nuevo_id = max(ids) + 1 if ids else 1
-            fila = [
-                str(nuevo_id), data.get('id_cliente',''),
-                data.get('cliente',''), data.get('tipo',''),
-                data.get('materia',''), data.get('descripcion',''),
-                data.get('juzgado',''), data.get('autos',''),
-                data.get('estado','Activo'), data.get('fecha_apertura',''),
-                data.get('proxima_actuacion',''), data.get('fecha_actuacion',''),
-                data.get('honorarios','0'), data.get('cobrado','0')
-            ]
-            ok = sheets_append('Casos', fila)
-            if ok:
-                await update.message.reply_text(
-                    f"✅ Caso añadido: *{data.get('materia','')}* — {data.get('cliente','')}",
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text("❌ Error al añadir el caso.")
-
-        elif action == 'update_caso_estado':
-            rows = sheets_read("Casos!A2:N100")
-            autos_buscar = data.get('autos','').lower()
-            encontrado = False
-            for i, row in enumerate(rows, 2):
-                if len(row) > 7 and autos_buscar in row[7].lower():
-                    sheets_update_cell(f"Casos!I{i}", data.get('estado', row[8]))
-                    if data.get('proxima_actuacion'):
-                        sheets_update_cell(f"Casos!K{i}", data['proxima_actuacion'])
-                    if data.get('fecha_actuacion'):
-                        sheets_update_cell(f"Casos!L{i}", data['fecha_actuacion'])
-                    encontrado = True
-                    break
-            if encontrado:
-                await update.message.reply_text(
-                    f"✅ Caso *{data.get('autos','')}* actualizado.",
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text(f"❌ No encontré el caso '{data.get('autos')}'.")
-
-        elif action == 'query_facturas':
-            estado = data.get('estado')
-            facturas = get_facturas(estado=estado)
-            if not facturas:
-                est_txt = f" {estado}" if estado else ""
-                await update.message.reply_text(f"No hay facturas{est_txt}.")
-            else:
-                titulo = f"🧾 *Facturas{' ' + estado if estado else ''} ({len(facturas)}):*"
-                msg = titulo + "\n\n"
-                total_pend = 0
-                for f in facturas:
-                    msg += f"• *{f['num']}* — {f['cliente']} | {f['total']} € | {f['estado']}\n"
-                    try:
-                        total_pend += float(str(f['total']).replace(',','.'))
-                    except:
-                        pass
-                if estado and 'pendiente' in estado.lower():
-                    msg += f"\n💰 *Total pendiente: {total_pend:.2f} €*"
-                await update.message.reply_text(msg, parse_mode='Markdown')
-
-        elif action == 'cobrar_factura':
-            rows = sheets_read("Facturas!A2:K100")
-            num_buscar = data.get('num_factura','').strip()
-            encontrado = False
-            tz = pytz.timezone(TIMEZONE)
-            fecha_cobro = data.get('fecha_cobro', datetime.now(tz).strftime('%Y-%m-%d'))
-            for i, row in enumerate(rows, 2):
-                if row and row[0].strip() == num_buscar:
-                    sheets_update_cell(f"Facturas!J{i}", "Cobrada")
-                    sheets_update_cell(f"Facturas!K{i}", fecha_cobro)
-                    encontrado = True
-                    break
-            if encontrado:
-                await update.message.reply_text(
-                    f"✅ Factura *{num_buscar}* marcada como cobrada.",
-                    parse_mode='Markdown'
-                )
-            else:
-                await update.message.reply_text(f"❌ No encontré la factura '{num_buscar}'.")
-
-        elif action == 'create_invoice_bd':
-            # Buscar cliente en BD para rellenar datos automáticamente
-            c = get_cliente(data.get('cliente',''))
-            if not c:
-                await update.message.reply_text(
-                    f"❌ No encontré el cliente '{data.get('cliente')}' en la base de datos. ¿Me facilita los datos manualmente?"
-                )
-            else:
-                nombre_completo = f"{c['nombre']} {c['apellidos']}".strip()
-                domicilio = f"{c['direccion']}, {c['cp']} {c['poblacion']}"
-                num_factura = siguiente_num_factura()
+            elif action == 'create_invoice':
                 base = data['base_imponible']
                 iva  = data.get('iva', 21)
                 ret  = data.get('retencion', 0)
+                # Si es total, calcular base
                 if not data.get('es_base', True):
                     factor = 1 + iva/100 - ret/100
                     base   = round(base / factor, 2)
                 pdf_bytes, total = generar_factura(
-                    num_factura=num_factura,
-                    cliente_nombre=nombre_completo,
-                    cliente_nif=c['nif'],
-                    cliente_domicilio=domicilio,
+                    num_factura=data['num_factura'],
+                    cliente_nombre=data['cliente_nombre'],
+                    cliente_nif=data['cliente_nif'],
+                    cliente_domicilio=data['cliente_domicilio'],
                     concepto=data['concepto'],
                     base_imponible=base,
                     iva=iva,
                     retencion=ret
                 )
-                # Guardar en Sheets
-                tz = pytz.timezone(TIMEZONE)
-                fecha = datetime.now(tz).strftime('%Y-%m-%d')
-                iva_amount = round(base * iva / 100, 2)
-                ret_amount = round(base * ret / 100, 2)
-                fila = [
-                    num_factura, c['id'], nombre_completo, fecha,
-                    data['concepto'], str(base), str(iva_amount),
-                    str(ret_amount), str(round(total, 2)),
-                    'Emitida', ''
-                ]
-                sheets_append('Facturas', fila)
-
-                # Enviar por email
-                num_safe   = num_factura.replace('/', '-').replace(' ', '')
-                pdf_name   = f"Factura_{num_safe}_{nombre_completo.replace(' ','_')}.pdf"
-                email_dest = c['email'] if c['email'] else GMAIL_USER
-                body_email = f"Adjunto encontrará la factura núm. {num_factura} por importe de {total:.2f} €."
-                ok = send_email_with_pdf(
-                    email_dest,
-                    f"Factura {num_factura} — AP Estudio Jurídico",
-                    body_email, pdf_bytes, pdf_name
-                )
+                num_safe    = data['num_factura'].replace('/', '-').replace(' ', '')
+                cliente_safe = data['cliente_nombre'].replace(' ','_').encode('ascii','ignore').decode()
+            pdf_name    = f"Factura_{num_safe}_{cliente_safe}.pdf"
+            if not pdf_name or pdf_name == ".pdf":
+                pdf_name = f"Factura_{num_safe}.pdf"
+                body_email  = f"Adjunto encontrará la factura núm. {data['num_factura']} por importe de {total:.2f} €."
+                ok = send_email_with_pdf(data['cliente_email'], f"Factura {data['num_factura']} — AP Estudio Jurídico", body_email, pdf_bytes, pdf_name)
                 if ok:
                     await update.message.reply_text(
-                        f"✅ Factura *{num_factura}* creada y enviada a `{email_dest}`\n"
-                        f"👤 Cliente: {nombre_completo}\n"
-                        f"💰 Total: *{total:.2f} €*",
+                        f"✅ Factura enviada a `{data['cliente_email']}`\n"
+                        f"📄 *{data['num_factura']}* — Total: *{total:.2f} €*",
                         parse_mode='Markdown'
                     )
                 else:
-                    await update.message.reply_text(
-                        f"✅ Factura *{num_factura}* creada (no se pudo enviar por email)\n"
-                        f"💰 Total: *{total:.2f} €*",
-                        parse_mode='Markdown'
-                    )
+                    await update.message.reply_text("❌ Error al enviar la factura.")
 
-        else:
-            response_text = data.get('response', raw)
-            # Convertir **texto** a negrita Markdown de Telegram
+            else:
+                response_text = data.get('response', raw)
             response_text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', response_text)
             await update.message.reply_text(response_text, parse_mode='Markdown')
 
