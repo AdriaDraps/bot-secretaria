@@ -535,6 +535,12 @@ def sheets_update_cell(rango, valor):
         logger.error(f"sheets_update error: {e}")
         return False
 
+def normalizar(texto):
+    """Elimina acentos y pasa a minúsculas para comparación."""
+    import unicodedata
+    texto = str(texto).lower()
+    return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
+
 def get_cliente(nombre):
     """Columnas: A=ID(0), B=Cliente(1), C=NIF(2), D=Dir(3), E=CP(4), F=Pobl(5), G=Prov(6), H=País(7), I=Email(8), J=Tel(9)"""
     rows = sheets_read("Clientes!A2:J200")
