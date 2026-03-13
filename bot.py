@@ -640,7 +640,7 @@ def insertar_factura_en_sheets(fecha, num_factura, cliente, nif, base, iva_amoun
         if not svc:
             return False
 
-        hoja_real = resolve_sheet_name('Facturas')
+        hoja_real = 'Facturas'
 
         # Obtener metadatos para saber el sheetId
         meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
