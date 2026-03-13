@@ -885,6 +885,111 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text, parse_mode='Markdown')
 
+
+async def cmd_initbbdd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inicializa la base de datos con hojas y datos de ejemplo."""
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+
+    await update.message.reply_text("⚙️ Inicializando base de datos...")
+
+    try:
+        svc = get_sheets_service()
+        if not svc:
+            await update.message.reply_text("❌ No se pudo conectar con Google Sheets.")
+            return
+
+        # Obtener hojas existentes
+        meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
+        hojas_existentes = [s['properties']['title'] for s in meta.get('sheets', [])]
+
+        requests = []
+
+        # Renombrar "Hoja 1" a "Clientes" si existe
+        for s in meta.get('sheets', []):
+            if s['properties']['title'] in ['Hoja 1', 'Sheet1', 'Hoja1']:
+                requests.append({
+                    'updateSheetProperties': {
+                        'properties': {'sheetId': s['properties']['sheetId'], 'title': 'Clientes'},
+                        'fields': 'title'
+                    }
+                })
+                hojas_existentes = ['Clientes' if h in ['Hoja 1', 'Sheet1', 'Hoja1'] else h for h in hojas_existentes]
+                break
+
+        # Añadir hojas que falten
+        for hoja in ['Casos', 'Facturas']:
+            if hoja not in hojas_existentes:
+                requests.append({'addSheet': {'properties': {'title': hoja}}})
+
+        if requests:
+            svc.spreadsheets().batchUpdate(
+                spreadsheetId=SHEETS_ID,
+                body={'requests': requests}
+            ).execute()
+
+        # Cabeceras y datos
+        datos = {
+            'Clientes!A1:L1': [['ID Cliente','Nombre','Apellidos','NIF/CIF','Email','Teléfono','Dirección','Población','CP','Tipo','Fecha Alta','Notas']],
+            'Clientes!A2:L11': [
+                ['1','Marc','Berbel Saura','12345678A','berbelmarc04@gmail.com','611 234 567','Carrer Margenat 30, 2º 1ª','Sabadell','08203','Particular','2024-01-15','Caso laboral pendiente'],
+                ['2','Sindicato Reformista de Policías','','B12345678','contacto@srp.es','93 456 78 90','Avenida Foietes 10, esc. 5, 1A','Benidorm','03501','Empresa','2024-02-03','Asesoramiento legal continuado'],
+                ['3','Rhama','Belouafi Chakir','23456789B','rhama.belouafi@gmail.com','622 345 678','Carrer Sant Joan 12, 3º 2ª','Terrassa','08221','Particular','2024-03-10','Querella por negligencia médica'],
+                ['4','Francisco','Rodríguez Contreras','34567890C','frc@hotmail.com','633 456 789','Avinguda Catalunya 45, 1º','Sabadell','08204','Particular','2024-04-22','Juicio del Jurado 2/2024'],
+                ['5','Antonia','Martínez Vidal','45678901D','antonia.mv@gmail.com','644 567 890','Carrer Gràcia 8, 4º 1ª','Sabadell','08205','Particular','2024-05-05','Causa penal en curso'],
+                ['6','Construcciones García SL','','B23456789','admin@construgarcia.com','93 567 89 01','Polígon Industrial Nord, Nau 3','Barberà del Vallès','08210','Empresa','2024-06-18','Reclamación subcontrata'],
+                ['7','Marta','Ramón Vidal','56789012E','marta.ramon@outlook.com','655 678 901','Passeig de la Concòrdia 22, 2º','Sabadell','08206','Particular','2024-07-30','Vista oral programada 12/03'],
+                ['8','Miquel','Moreno Puig','67890123F','miquel.moreno@gmail.com','666 789 012','Carrer del Nord 5, bajos','Cerdanyola del Vallès','08290','Particular','2024-08-14','Demanda civil pendiente'],
+                ['9','Consuelo','Álvarez García','78901234G','consuelo.ag@yahoo.es','677 890 123','Rambla Pompeu Fabra 33, 5º 3ª','Sabadell','08207','Particular','2024-09-01','Recurso C-A en tramitación'],
+                ['10','Transportes Kabouri SL','','B34567890','info@tkabouri.com','93 678 90 12','Carrer Indústria 15, Nau 7','Sabadell','08208','Empresa','2024-10-20','Documentación pendiente'],
+            ],
+            'Casos!A1:N1': [['ID Caso','ID Cliente','Cliente','Tipo','Materia','Descripción','Juzgado','Nº Autos','Estado','Fecha Apertura','Próxima Actuación','Fecha Act.','Honorarios (€)','Cobrado (€)']],
+            'Casos!A2:N11': [
+                ['1','3','Belouafi','Penal','Negligencia médica','Querella contra médicos del Consorci Sanitari','Juzgado Instrucción 3 Terrassa','DP 45/2024','En instrucción','2024-03-10','Declaración imputados','2026-03-20','3500','1500'],
+                ['2','4','Rodríguez','Penal','Violencia de género','Juicio del Jurado — defensa acusado','Juzgado Violencia Mujer 1 Sabadell','TJ 2/2024','Juicio oral','2024-04-22','Vista oral','2026-04-15','4200','2000'],
+                ['3','5','Martínez','Penal','Estafa','Causa penal por presunta estafa inmobiliaria','Juzgado Instrucción 5 Sabadell','PA 112/2024','Fase intermedia','2024-05-05','Escrito acusación','2026-03-25','2800','2800'],
+                ['4','7','Ramón','Civil','Divorcio contencioso','Divorcio con hijos menores y bienes','Juzgado Familia 2 Sabadell','JV 78/2024','Juicio oral','2024-07-30','Vista oral','2026-03-12','2200','1100'],
+                ['5','8','Moreno','Civil','Reclamación cantidad','Demanda por impago de servicios profesionales','Juzgado 1ª Instancia 4 Cerdanyola','JO 234/2024','Admitida','2024-08-14','Contestación demanda','2026-03-30','1500','750'],
+                ['6','9','Álvarez','Penal','Recurso multa','Recurso contra auto imposición multa — art. 52 CP','Sección Instrucción TI Sabadell','PA 89/2023','Recurso pendiente','2024-09-01','Resolución recurso','2026-04-01','900','900'],
+                ['7','10','Kabouri','Laboral','Documentación','Incumplimiento obligaciones documentales empresa','Juzgado Social 3 Sabadell','AS 567/2024','Pendiente','2024-10-20','Entrega documentación','2026-03-13','1800','0'],
+                ['8','2','SRP','Penal','Asesoramiento','Asesoramiento legal continuado al sindicato','-','-','Activo','2024-02-03','Reunión mensual','2026-04-07','743.76','743.76'],
+                ['9','6','Construcciones G.','Civil','Reclamación subcontrata','Reclamación por trabajos no pagados — 45.000€','Juzgado 1ª Instancia 6 Barberà','JO 123/2025','Admitida','2025-01-10','Audiencia previa','2026-03-10','3200','1600'],
+                ['10','1','Berbel','Laboral','Despido improcedente','Despido objetivo impugnado — reclamación 18.000€','Juzgado Social 1 Sabadell','AS 234/2025','Conciliación','2025-02-20','Acto conciliación','2026-03-18','1800','900'],
+            ],
+            'Facturas!A1:K1': [['Nº Factura','ID Cliente','Cliente','Fecha','Concepto','Base (€)','IVA 21% (€)','Retención IRPF (€)','Total (€)','Estado','Fecha Cobro']],
+            'Facturas!A2:K9': [
+                ['1/2026','2','SRP','2026-03-07','Honorarios asesoramiento legal Marzo 2026','61.98','13.02','4.34','70.66','Cobrada','2026-03-07'],
+                ['2/2026','4','Rodríguez','2026-02-28','Provisión de fondos juicio oral TJ 2/2024','1000','210','150','1060','Cobrada','2026-03-01'],
+                ['3/2026','7','Ramón','2026-02-15','Minuta honorarios preparación vista oral JV 78/2024','550','115.5','82.5','583','Cobrada','2026-02-20'],
+                ['4/2026','3','Belouafi','2026-02-01','Provisión de fondos diligencias DP 45/2024','750','157.5','0','907.5','Pendiente',''],
+                ['5/2026','9','Álvarez','2026-01-20','Honorarios recurso auto multa PA 89/2023','900','189','135','954','Cobrada','2026-01-25'],
+                ['6/2026','5','Martínez','2026-01-10','Honorarios fase intermedia PA 112/2024','800','168','120','848','Cobrada','2026-01-15'],
+                ['7/2026','1','Berbel','2026-01-05','Provisión de fondos acto conciliación AS 234/2025','450','94.5','67.5','477','Pendiente',''],
+                ['8/2026','6','Construcciones G.','2026-03-01','Honorarios audiencia previa JO 123/2025','600','126','90','636','Emitida',''],
+            ],
+        }
+
+        for rango, valores in datos.items():
+            svc.spreadsheets().values().update(
+                spreadsheetId=SHEETS_ID,
+                range=rango,
+                valueInputOption='USER_ENTERED',
+                body={'values': valores}
+            ).execute()
+
+        await update.message.reply_text(
+            "✅ *Base de datos inicializada*\n\n"
+            "• 10 clientes\n"
+            "• 10 casos\n"
+            "• 8 facturas\n\n"
+            "Ya puede consultar: _\"Dame los datos de Berbel\"_",
+            parse_mode='Markdown'
+        )
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
 async def cmd_bbdd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
     if allowed_id and str(update.effective_chat.id) != str(allowed_id):
@@ -1088,7 +1193,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 base = data['base_imponible']
                 iva  = data.get('iva', 21)
                 ret  = data.get('retencion', 0)
-                # Si es total, calcular base
                 if not data.get('es_base', True):
                     factor = 1 + iva/100 - ret/100
                     base   = round(base / factor, 2)
@@ -1102,13 +1206,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     iva=iva,
                     retencion=ret
                 )
-                num_safe    = data['num_factura'].replace('/', '-').replace(' ', '')
-                cliente_safe = data['cliente_nombre'].replace(' ','_').encode('ascii','ignore').decode()
-            pdf_name    = f"Factura_{num_safe}_{cliente_safe}.pdf"
-            if not pdf_name or pdf_name == ".pdf":
-                pdf_name = f"Factura_{num_safe}.pdf"
-                body_email  = f"Adjunto encontrará la factura núm. {data['num_factura']} por importe de {total:.2f} €."
-                ok = send_email_with_pdf(data['cliente_email'], f"Factura {data['num_factura']} — AP Estudio Jurídico", body_email, pdf_bytes, pdf_name)
+                num_safe     = data['num_factura'].replace('/', '-').replace(' ', '')
+                cliente_safe = data['cliente_nombre'].replace(' ', '_').encode('ascii', 'ignore').decode()
+                pdf_name     = f"Factura_{num_safe}_{cliente_safe}.pdf"
+                body_email   = f"Adjunto encontrará la factura núm. {data['num_factura']} por importe de {total:.2f} €."
+                ok = send_email_with_pdf(
+                    data['cliente_email'],
+                    f"Factura {data['num_factura']} — AP Estudio Jurídico",
+                    body_email, pdf_bytes, pdf_name
+                )
                 if ok:
                     await update.message.reply_text(
                         f"✅ Factura enviada a `{data['cliente_email']}`\n"
@@ -1120,8 +1226,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             else:
                 response_text = data.get('response', raw)
-            response_text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', response_text)
-            await update.message.reply_text(response_text, parse_mode='Markdown')
+                response_text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', response_text)
+                await update.message.reply_text(response_text, parse_mode='Markdown')
+
 
     except json.JSONDecodeError:
         await update.message.reply_text(raw)
@@ -1139,6 +1246,7 @@ def main():
     app.add_handler(CommandHandler("id",      cmd_id))
     app.add_handler(CommandHandler("resumen", cmd_resumen))
     app.add_handler(CommandHandler("bbdd",    cmd_bbdd))
+    app.add_handler(CommandHandler("initbbdd", cmd_initbbdd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     scheduler = AsyncIOScheduler(timezone=pytz.timezone(TIMEZONE))
