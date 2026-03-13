@@ -1191,9 +1191,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Extraer todos los bloques JSON (soporte multi-acción)
         # Buscar tanto JSONs sueltos como dentro de bloques ```json ... ```
-        json_matches = re.findall(r'```json\s*(\{.*?\})\s*```', raw, re.DOTALL)
-        if not json_matches:
-            json_matches = re.findall(r'(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})', raw, re.DOTALL)
+        # Extraer JSONs: primero dentro de bloques ```json```, luego sueltos
+        json_matches = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', raw, re.DOTALL)
 
         # Texto limpio = raw sin bloques JSON ni ```
         clean_text = re.sub(r'```json.*?```', '', raw, flags=re.DOTALL)
@@ -1215,6 +1214,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not actions_list:
             await update.message.reply_text(raw)
             return
+
+        acciones_completadas = []
 
         for data in actions_list:
             action = data.get('action', 'none')
@@ -1565,6 +1566,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception:
                     await update.message.reply_text(response_text)
 
+
+        # Enviar resumen final de todas las acciones
+        if acciones_completadas:
+            resumen = "\n".join(acciones_completadas)
+            try:
+                await update.message.reply_text(resumen, parse_mode='HTML')
+            except Exception:
+                await update.message.reply_text(resumen)
+        elif clean_text:
+            await update.message.reply_text(clean_text)
 
     except json.JSONDecodeError:
         await update.message.reply_text(raw)
