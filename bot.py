@@ -32,6 +32,7 @@ import anthropic
 TELEGRAM_TOKEN    = os.environ.get('TELEGRAM_TOKEN')
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
 GMAIL_USER        = os.environ.get('GMAIL_USER')
+LOGO_B64          = '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'
 TELEGRAM_CHAT_ID  = os.environ.get('TELEGRAM_CHAT_ID', '')
 GOOGLE_TOKEN_B64  = os.environ.get('GOOGLE_TOKEN_B64')
 SHEETS_ID         = os.environ.get('SHEETS_ID', '1saZ98ZEqj46nxcvQC5V0oKJ0GLL-ly0MeuxZqsZHNKI')
@@ -306,32 +307,22 @@ def send_email(to_addr, subject, body_text):
         if not service:
             logger.error("No se pudo conectar con Gmail API")
             return False
-
-        # Convertir **texto** a <strong>texto</strong> para negrita en HTML
         formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', body_text)
         formatted = formatted.replace('\n', '<br>')
-
-        html_body = f"""
-        <html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;">
-          <div style="border-top:3px solid #b8960c;padding-top:20px;">
-            {formatted}
-          </div>
-          <div style="margin-top:30px;padding-top:15px;border-top:1px solid #ddd;
-                      font-size:0.85em;color:#666;">
-            <em>Secretaria Virtual — AP Estudio Jurídico</em>
-          </div>
-        </body></html>"""
-
+        logo_tag = '<img src="data:image/png;base64,' + LOGO_B64 + '" alt="AP Estudio Juridico" style="height:80px;width:auto;"/>'
+        html_body = (
+            '<html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;">'
+            + '<div style="text-align:center;margin-bottom:24px;">' + logo_tag + '</div>'
+            + '<div style="border-top:3px solid #b8960c;padding-top:20px;">'
+            + formatted + '</div>'
+            + '<div style="margin-top:30px;padding-top:15px;border-top:1px solid #ddd;font-size:0.85em;color:#666;">'
+            + '<em>Secretar\u00eda \u2014 AP Estudio Jur\u00eddico</em></div></body></html>')
         msg = MIMEText(html_body, 'html', 'utf-8')
         msg['Subject'] = subject
         msg['From']    = GMAIL_USER
         msg['To']      = to_addr
-
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-        service.users().messages().send(
-            userId='me',
-            body={'raw': raw}
-        ).execute()
+        service.users().messages().send(userId='me', body={'raw': raw}).execute()
         logger.info(f"Email enviado a {to_addr}")
         return True
     except Exception as e:
@@ -339,131 +330,32 @@ def send_email(to_addr, subject, body_text):
         return False
 
 
-# ─────────────────────────────────────────────
-# GENERADOR DE FACTURAS PDF
-# ─────────────────────────────────────────────
-def generar_factura(num_factura, cliente_nombre, cliente_nif, cliente_domicilio,
-                    concepto, base_imponible, iva=21, retencion=0):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4,
-                            rightMargin=2.5*cm, leftMargin=2.5*cm,
-                            topMargin=2*cm, bottomMargin=2*cm)
-    story = []
-
-    normal   = ParagraphStyle('normal',  fontSize=10, fontName='Helvetica', leading=14)
-    negrita  = ParagraphStyle('negrita', fontSize=10, fontName='Helvetica-Bold', leading=14)
-    derecha  = ParagraphStyle('derecha', fontSize=10, fontName='Helvetica', alignment=TA_RIGHT)
-    der_bold = ParagraphStyle('derbold', fontSize=10, fontName='Helvetica-Bold', alignment=TA_RIGHT)
-    centrado = ParagraphStyle('centrado',fontSize=10, fontName='Helvetica-Bold', alignment=TA_CENTER)
-    small    = ParagraphStyle('small',   fontSize=9,  fontName='Helvetica', alignment=TA_CENTER)
-    justif   = ParagraphStyle('justif',  fontSize=10, fontName='Helvetica', leading=15, alignment=TA_JUSTIFY)
-
-    tz  = pytz.timezone(TIMEZONE)
-    hoy = datetime.now(tz).strftime('%d-%m-%Y')
-
-    cab_data = [[
-        Paragraph('', normal),
-        Paragraph('<b>Adrià Paños Ruiz</b><br/>Carrer Comte Ramon Berenguer 1-3, esc. B, 2º 1ª<br/>08204 Sabadell Barcelona<br/>47182626N', derecha)
-    ]]
-    cab_table = Table(cab_data, colWidths=[8*cm, 8*cm])
-    cab_table.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP')]))
-    story.append(cab_table)
-    story.append(Spacer(1, 1.5*cm))
-
-    story.append(Paragraph(hoy, derecha))
-    story.append(Spacer(1, 0.8*cm))
-    story.append(Paragraph(f'Factura núm. {num_factura}', normal))
-    story.append(Spacer(1, 0.8*cm))
-
-    texto_cuerpo = (
-        f'<b>MINUTA DE HONORARIOS</b> devengados por el despacho a cargo de '
-        f'<b>{cliente_nombre.upper()}</b>, con domicilio en {cliente_domicilio}, '
-        f'provisto de NIF/CIF núm. {cliente_nif}, comprensiva de la siguiente actuación profesional:'
-    )
-    story.append(Paragraph(texto_cuerpo, justif))
-    story.append(Spacer(1, 0.8*cm))
-
-    concepto_lines = concepto.replace('\\n', '\n').replace('\n', '<br/>')
-    concepto_data = [[
-        Paragraph(concepto_lines, normal),
-        Paragraph(f'{base_imponible:.2f} €', derecha)
-    ]]
-    concepto_table = Table(concepto_data, colWidths=[13*cm, 3*cm])
-    concepto_table.setStyle(TableStyle([
-        ('VALIGN',(0,0),(-1,-1),'TOP'),
-        ('TOPPADDING',(0,0),(-1,-1),4),
-        ('BOTTOMPADDING',(0,0),(-1,-1),4),
-    ]))
-    story.append(concepto_table)
-    story.append(Spacer(1, 0.8*cm))
-
-    iva_importe   = round(base_imponible * iva / 100, 2)
-    retencion_imp = round(base_imponible * retencion / 100, 2)
-    total         = round(base_imponible + iva_importe - retencion_imp, 2)
-
-    totales_rows = [
-        [Paragraph('<b>TOTAL HONORARIOS</b>', negrita), Paragraph(f'<b>{base_imponible:.2f} €</b>', der_bold)],
-        [Paragraph(f'{iva}% de IVA, euros', normal),    Paragraph(f'{iva_importe:.2f} €', derecha)],
-    ]
-    if retencion > 0:
-        totales_rows.append([Paragraph(f'{retencion}% de retención IRPF, euros', normal), Paragraph(f'{retencion_imp:.2f} €', derecha)])
-    totales_rows.append([Paragraph('<b>TOTAL MINUTA, EUROS</b>', negrita), Paragraph(f'<b>{total:.2f} €</b>', der_bold)])
-
-    tot_table = Table(totales_rows, colWidths=[13*cm, 3*cm])
-    tot_table.setStyle(TableStyle([
-        ('VALIGN',  (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING',    (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-        ('LINEABOVE', (0,0),  (-1,0),  0.5, colors.black),
-        ('LINEBELOW', (0,0),  (-1,0),  0.5, colors.black),
-        ('LINEABOVE', (0,-1), (-1,-1), 0.5, colors.black),
-        ('LINEBELOW', (0,-1), (-1,-1), 0.5, colors.black),
-        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor('#f0f0f0')),
-    ]))
-    story.append(tot_table)
-    story.append(Spacer(1, 1.5*cm))
-
-    story.append(Paragraph('<b>Forma de pago: transferencia bancaria</b>', centrado))
-    story.append(Paragraph('<b>C/C núm. ES1015632626313269891055</b>', centrado))
-    story.append(Spacer(1, 2*cm))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.black, spaceAfter=6))
-    story.append(Paragraph('Teléfono: 603690659', small))
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer.getvalue(), total
-
 def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
     try:
         service = get_gmail_service()
         if not service:
             return False
-
         msg = MIMEMultipart()
         msg['Subject'] = subject
         msg['From']    = GMAIL_USER
         msg['To']      = to_addr
-
         formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', body_text)
         formatted = formatted.replace('\n', '<br>')
+        logo_tag = '<img src="data:image/png;base64,' + LOGO_B64 + '" alt="AP Estudio Juridico" style="height:80px;width:auto;"/>'
         html_body = (
             '<html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;">'
-            f'<div style="text-align:center;margin-bottom:24px;">'  
-            f'<img src="data:image/png;base64,{LOGO_B64}" alt="AP Estudio Juridico" style="height:80px;width:auto;"/>'
-            '</div>'
-            f'<div>{formatted}</div>'
-            '<hr style="border:none;border-top:1px solid #ddd;margin:24px 0;">'
-            '<div style="font-size:0.85em;color:#666;text-align:center;"><em>AP Estudio Juridico</em></div>'
-            '</body></html>')
+            + '<div style="text-align:center;margin-bottom:24px;">' + logo_tag + '</div>'
+            + '<div>' + formatted + '</div>'
+            + '<hr style="border:none;border-top:1px solid #ddd;margin:24px 0;">'
+            + '<div style="font-size:0.85em;color:#666;text-align:center;"><em>Secretar\u00eda \u2014 AP Estudio Jur\u00eddico</em></div>'
+            + '</body></html>')
         msg.attach(MIMEText(html_body, 'html', 'utf-8'))
-
         part = MIMEBase('application', 'pdf')
         part.set_payload(pdf_bytes)
         encoders.encode_base64(part)
         part.add_header('Content-Disposition', 'attachment', filename=pdf_filename)
         part.add_header('Content-Type', 'application/pdf', name=pdf_filename)
         msg.attach(part)
-
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         service.users().messages().send(userId='me', body={'raw': raw}).execute()
         logger.info(f"Email con PDF enviado a {to_addr}")
@@ -471,7 +363,6 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
     except Exception as e:
         logger.error(f"Error enviando email con PDF: {e}")
         return False
-
 # ─────────────────────────────────────────────
 # CLAUDE
 # ─────────────────────────────────────────────
@@ -1509,16 +1400,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                     num_safe    = num_factura.replace('/', '-').replace(' ', '')
                     pdf_name    = f"Factura_{num_safe}_{nombre_completo.replace(' ','_')}.pdf"
-                    email_dest  = c['email'] if c['email'] else GMAIL_USER
+                    email_dest  = c['email'].strip() if c.get('email','').strip() else None
                     body_email  = f"Adjunto la factura núm. {num_factura} por importe de {total:.2f} €."
-                    ok = send_email_with_pdf(email_dest, f"Factura {num_factura} — AP Estudio Jurídico", body_email, pdf_bytes, pdf_name)
-                    if ok:
-                        await update.message.reply_text(
-                            f"✅ Factura {num_factura} creada y enviada a {email_dest}\n"
-                            f"Cliente: {nombre_completo}\nTotal: {total:.2f} €"
-                        )
+                    if email_dest:
+                        ok = send_email_with_pdf(email_dest, f"Factura {num_factura} — AP Estudio Jurídico", body_email, pdf_bytes, pdf_name)
+                        if ok:
+                            acciones_completadas.append(f"✅ Factura {num_factura} creada y enviada a {email_dest}\nCliente: {nombre_completo} | Total: {total:.2f} €")
+                        else:
+                            acciones_completadas.append(f"✅ Factura {num_factura} creada (error al enviar email)\nTotal: {total:.2f} €")
                     else:
-                        await update.message.reply_text(f"✅ Factura {num_factura} creada (error al enviar email)\nTotal: {total:.2f} €")
+                        acciones_completadas.append(f"✅ Factura {num_factura} creada — sin email en BD para {nombre_completo}\nTotal: {total:.2f} €")
 
             else:
                 response_text = data.get('response', raw)
