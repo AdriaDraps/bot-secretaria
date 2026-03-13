@@ -1234,14 +1234,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif action == 'query_cliente':
                 c = get_cliente(data.get('nombre', ''))
                 if c:
-                    partes = [c['cp'], c['poblacion'], c.get('provincia','')]
-                    dir_completa = f"{c['direccion']}, {' '.join(p for p in partes if p)}"
-                    msg = (f"👤 {c['nombre']}\n"
-                           f"NIF/CIF: {c['nif']}\n"
-                           f"📧 {c['email']}\n"
-                           f"📱 {c['telefono']}\n"
-                           f"🏠 {dir_completa}")
-                    await update.message.reply_text(msg)
+                    def campo(etiqueta, valor):
+                        return f"{etiqueta}: {valor}\n" if valor else f"{etiqueta}:\n"
+                    msg = (campo("Cliente",   c['nombre']) +
+                           campo("NIF/CIF",   c['nif']) +
+                           campo("Dirección", c['direccion']) +
+                           campo("CP",        c['cp']) +
+                           campo("Población", c['poblacion']) +
+                           campo("Provincia", c['provincia']) +
+                           campo("País",      c['pais']) +
+                           campo("Email",     c['email']) +
+                           campo("Teléfono",  c['telefono']))
+                    await update.message.reply_text(msg.strip())
                 else:
                     await update.message.reply_text(f"❌ No encontré el cliente '{data.get('nombre')}'.")
 
