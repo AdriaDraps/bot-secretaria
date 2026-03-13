@@ -632,6 +632,102 @@ def siguiente_num_factura():
                 pass
     return str(max(nums) + 1 if nums else 1)
 
+
+def insertar_factura_en_sheets(fecha, num_factura, cliente, nif, base, iva_amount, ret_amount, total):
+    """Inserta una factura antes de la fila de totales, desplaza totales y actualiza sumas."""
+    try:
+        svc = get_sheets_service()
+        if not svc:
+            return False
+
+        hoja_real = resolve_sheet_name('Facturas')
+
+        # Obtener metadatos para saber el sheetId
+        meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
+        sheet_id = None
+        for s in meta.get('sheets', []):
+            if s['properties']['title'] == hoja_real:
+                sheet_id = s['properties']['sheetId']
+                break
+
+        # Leer columna A para encontrar última fila con datos
+        rows = sheets_read(f"{hoja_real}!A2:A200")
+        ultima_fila_datos = 1
+        for i, r in enumerate(rows, 2):
+            if r and str(r[0]).strip().isdigit():
+                ultima_fila_datos = i
+
+        # La fila de inserción es después de la última factura
+        fila_insercion = ultima_fila_datos + 1  # fila en blanco
+        fila_nueva_factura = ultima_fila_datos + 2  # nueva factura aquí... 
+        # En realidad: insertar ANTES del total, dejando 1 fila en blanco entre última factura y total
+
+        # Obtener ID correlativo
+        id_rows = sheets_read(f"{hoja_real}!A2:A200")
+        ids = [int(str(r[0]).strip()) for r in id_rows if r and str(r[0]).strip().isdigit()]
+        nuevo_id = max(ids) + 1 if ids else 36
+
+        # Insertar 1 fila en blanco + 1 para la nueva factura (2 filas) antes de la fila de totales
+        # Primero, insertar 1 fila vacía después de la última factura
+        insert_request = {
+            'insertDimension': {
+                'range': {
+                    'sheetId': sheet_id,
+                    'dimension': 'ROWS',
+                    'startIndex': ultima_fila_datos,  # 0-indexed
+                    'endIndex': ultima_fila_datos + 1
+                },
+                'inheritFromBefore': True
+            }
+        }
+        svc.spreadsheets().batchUpdate(
+            spreadsheetId=SHEETS_ID,
+            body={'requests': [insert_request]}
+        ).execute()
+
+        # Escribir datos de la nueva factura en la fila insertada
+        nueva_fila = ultima_fila_datos + 1  # 1-indexed, justo la que acabamos de insertar
+        valores = [[
+            str(nuevo_id), fecha, num_factura, '0',
+            cliente, nif,
+            str(round(base, 2)), str(round(iva_amount, 2)),
+            str(round(ret_amount, 2)), str(round(total, 2)),
+            '', '', 'Emitida', 'ORDINARIA'
+        ]]
+        svc.spreadsheets().values().update(
+            spreadsheetId=SHEETS_ID,
+            range=f"{hoja_real}!A{nueva_fila}:N{nueva_fila}",
+            valueInputOption='USER_ENTERED',
+            body={'values': valores}
+        ).execute()
+
+        # Actualizar fórmulas de totales (fila totales = nueva_fila + 2, con 1 en blanco)
+        fila_total = nueva_fila + 2
+        # Columnas con sumas: G=base, H=iva, I=irpf, J=total, D=pendiente
+        for col_letra, col_num in [('D',4),('G',7),('H',8),('I',9),('J',10)]:
+            formula = f"=SUM({col_letra}2:{col_letra}{nueva_fila})"
+            svc.spreadsheets().values().update(
+                spreadsheetId=SHEETS_ID,
+                range=f"{hoja_real}!{col_letra}{fila_total}",
+                valueInputOption='USER_ENTERED',
+                body={'values': [[formula]]}
+            ).execute()
+
+        # Escribir etiqueta "Total" si no existe
+        svc.spreadsheets().values().update(
+            spreadsheetId=SHEETS_ID,
+            range=f"{hoja_real}!A{fila_total}",
+            valueInputOption='USER_ENTERED',
+            body={'values': [['Total']]}
+        ).execute()
+
+        logger.info(f"Factura {num_factura} insertada en fila {nueva_fila}, totales en fila {fila_total}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error insertando factura en Sheets: {e}")
+        return False
+
 def get_bbdd_context():
     try:
         clientes = get_todos_clientes()
@@ -1394,17 +1490,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     fecha = datetime.now(tz).strftime('%Y-%m-%d')
                     iva_amount = round(base * iva / 100, 2)
                     ret_amount = round(base * ret / 100, 2)
-                    # Columnas: A=Id_auto, B=Fecha, C=NumFac, D=Pendiente, E=Cliente, F=NIF,
-                    # G=Base, H=IVA, I=IRPF, J=Total, K='', L='', M=EstadoCobro, N=Serie
-                    # Obtener siguiente ID
-                    id_rows = sheets_read("Facturas!A2:A200")
-                    ids = [int(str(r[0]).strip()) for r in id_rows if r and str(r[0]).strip().isdigit()]
-                    nuevo_id = max(ids) + 1 if ids else 1
-                    fila = [str(nuevo_id), fecha, num_factura, '0',
-                            nombre_completo, c['nif'],
-                            str(base), str(iva_amount), str(ret_amount), str(round(total, 2)),
-                            '', '', 'Emitida', 'ORDINARIA']
-                    sheets_append('Facturas', fila)
+                    # Insertar factura antes de la fila de totales
+                    insertar_factura_en_sheets(
+                        fecha=fecha,
+                        num_factura=num_factura,
+                        cliente=nombre_completo,
+                        nif=c['nif'],
+                        base=base,
+                        iva_amount=iva_amount,
+                        ret_amount=ret_amount,
+                        total=total
+                    )
                     num_safe    = num_factura.replace('/', '-').replace(' ', '')
                     pdf_name    = f"Factura_{num_safe}_{nombre_completo.replace(' ','_')}.pdf"
                     email_dest  = c['email'] if c['email'] else GMAIL_USER
