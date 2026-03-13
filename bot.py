@@ -1234,11 +1234,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif action == 'query_cliente':
                 c = get_cliente(data.get('nombre', ''))
                 if c:
+                    partes = [c['cp'], c['poblacion'], c.get('provincia','')]
+                    dir_completa = f"{c['direccion']}, {' '.join(p for p in partes if p)}"
                     msg = (f"👤 {c['nombre']}\n"
                            f"NIF/CIF: {c['nif']}\n"
                            f"📧 {c['email']}\n"
                            f"📱 {c['telefono']}\n"
-                           f"🏠 {c['direccion']}, {c['cp']} {c['poblacion']} ({c['provincia']})")
+                           f"🏠 {dir_completa}")
                     await update.message.reply_text(msg)
                 else:
                     await update.message.reply_text(f"❌ No encontré el cliente '{data.get('nombre')}'.")
@@ -1362,7 +1364,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text(f"❌ No encontré el cliente '{data.get('cliente')}' en la base de datos.")
                 else:
                     nombre_completo = f"{c['nombre']} {c['apellidos']}".strip()
-                    domicilio = f"{c['direccion']}, {c['cp']} {c['poblacion']} ({c['provincia']})"
+                    domicilio = f"{c['direccion']}, {c['cp']} {c['poblacion']}{', ' + c.get('provincia','') if c.get('provincia') else ''}"
                     num_factura = siguiente_num_factura()
                     base = data['base_imponible']
                     iva  = data.get('iva', 21)
