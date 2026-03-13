@@ -536,7 +536,7 @@ def sheets_update_cell(rango, valor):
         return False
 
 def get_cliente(nombre):
-    rows = sheets_read("Clientes!A2:L100")
+    rows = sheets_read("Clientes!A2:L200")
     nombre_lower = nombre.lower()
     for row in rows:
         if len(row) < 2:
@@ -560,7 +560,7 @@ def get_cliente(nombre):
     return None
 
 def get_todos_clientes():
-    rows = sheets_read("Clientes!A2:L100")
+    rows = sheets_read("Clientes!A2:L200")
     clientes = []
     for row in rows:
         if len(row) >= 2 and row[0]:
@@ -573,7 +573,7 @@ def get_todos_clientes():
     return clientes
 
 def get_casos_cliente(nombre_cliente=None):
-    rows = sheets_read("Casos!A2:N100")
+    rows = sheets_read("Casos!A2:N200")
     casos = []
     for row in rows:
         if not row or not row[0]:
@@ -593,7 +593,7 @@ def get_casos_cliente(nombre_cliente=None):
     return casos
 
 def get_facturas(estado=None):
-    rows = sheets_read("Facturas!A2:K100")
+    rows = sheets_read("Facturas!A2:K200")
     facturas = []
     for row in rows:
         if not row or not row[0]:
@@ -609,12 +609,12 @@ def get_facturas(estado=None):
     return facturas
 
 def siguiente_id_cliente():
-    rows = sheets_read("Clientes!A2:A100")
+    rows = sheets_read("Clientes!A2:A200")
     ids = [int(r[0]) for r in rows if r and r[0].isdigit()]
     return max(ids) + 1 if ids else 1
 
 def siguiente_num_factura():
-    rows = sheets_read("Facturas!A2:A100")
+    rows = sheets_read("Facturas!A2:A200")
     nums = []
     for r in rows:
         if r and r[0]:
@@ -1232,6 +1232,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             else:
                 response_text = data.get('response', raw)
+                # Si la respuesta es un JSON, procesarlo de nuevo
+                if response_text.strip().startswith('{'):
+                    try:
+                        inner = json.loads(response_text.strip())
+                        inner_action = inner.get('action', 'none')
+                        if inner_action != 'none':
+                            data = inner
+                            action = inner_action
+                            # Re-dispatch: añadir a la lista para procesar
+                            actions_list.append(inner)
+                            continue
+                        else:
+                            response_text = inner.get('response', response_text)
+                    except Exception:
+                        pass
                 response_text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', response_text)
                 try:
                     await update.message.reply_text(response_text, parse_mode='Markdown')
