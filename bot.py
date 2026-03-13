@@ -610,7 +610,7 @@ def get_facturas(estado=None):
 
 def siguiente_id_cliente():
     rows = sheets_read("Clientes!A2:A200")
-    ids = [int(r[0]) for r in rows if r and r[0].isdigit()]
+    ids = [int(r[0]) for r in rows if r and str(r[0]).isdigit()]
     return max(ids) + 1 if ids else 1
 
 def siguiente_num_factura():
@@ -1234,15 +1234,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif action == 'query_cliente':
                 c = get_cliente(data.get('nombre', ''))
                 if c:
-                    nombre_completo = f"{c['nombre']} {c['apellidos']}".strip()
-                    msg = (f"👤 {nombre_completo}\n"
-                           f"NIF: {c['nif']}\n"
-                           f"Email: {c['email']}\n"
-                           f"Tel: {c['telefono']}\n"
-                           f"Dir: {c['direccion']}, {c['cp']} {c['poblacion']}\n"
-                           f"Tipo: {c['tipo']}\n"
-                           f"Alta: {c['fecha_alta']}\n"
-                           f"Notas: {c['notas']}")
+                    msg = (f"👤 {c['nombre']}\n"
+                           f"NIF/CIF: {c['nif']}\n"
+                           f"📧 {c['email']}\n"
+                           f"📱 {c['telefono']}\n"
+                           f"🏠 {c['direccion']}, {c['cp']} {c['poblacion']} ({c['provincia']})")
                     await update.message.reply_text(msg)
                 else:
                     await update.message.reply_text(f"❌ No encontré el cliente '{data.get('nombre')}'.")
@@ -1366,7 +1362,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text(f"❌ No encontré el cliente '{data.get('cliente')}' en la base de datos.")
                 else:
                     nombre_completo = f"{c['nombre']} {c['apellidos']}".strip()
-                    domicilio = f"{c['direccion']}, {c['cp']} {c['poblacion']}"
+                    domicilio = f"{c['direccion']}, {c['cp']} {c['poblacion']} ({c['provincia']})"
                     num_factura = siguiente_num_factura()
                     base = data['base_imponible']
                     iva  = data.get('iva', 21)
