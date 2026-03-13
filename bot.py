@@ -536,38 +536,38 @@ def sheets_update_cell(rango, valor):
         return False
 
 def get_cliente(nombre):
-    rows = sheets_read("Clientes!A2:L200")
-    nombre_lower = nombre.lower()
+    """Columnas: A=ID(0), B=Cliente(1), C=NIF(2), D=Dir(3), E=CP(4), F=Pobl(5), G=Prov(6), H=País(7), I=Email(8), J=Tel(9)"""
+    rows = sheets_read("Clientes!A2:J200")
+    nombre_norm = normalizar(nombre)
     for row in rows:
         if len(row) < 2:
             continue
-        nombre_completo = f"{row[1]} {row[2]}".lower() if len(row) > 2 else row[1].lower()
-        if nombre_lower in nombre_completo or nombre_lower in row[1].lower():
+        nombre_norm2 = normalizar(str(row[1])) if len(row) > 1 else ''
+        if nombre_norm in nombre_norm2 or nombre_norm2 in nombre_norm:
+            def col(i): return str(row[i]).strip() if len(row) > i else ''
             return {
-                'id': row[0] if len(row) > 0 else '',
-                'nombre': row[1] if len(row) > 1 else '',
-                'apellidos': row[2] if len(row) > 2 else '',
-                'nif': row[3] if len(row) > 3 else '',
-                'email': row[4] if len(row) > 4 else '',
-                'telefono': row[5] if len(row) > 5 else '',
-                'direccion': row[6] if len(row) > 6 else '',
-                'poblacion': row[7] if len(row) > 7 else '',
-                'cp': row[8] if len(row) > 8 else '',
-                'tipo': row[9] if len(row) > 9 else '',
-                'fecha_alta': row[10] if len(row) > 10 else '',
-                'notas': row[11] if len(row) > 11 else '',
+                'id':        col(0),
+                'nombre':    col(1),
+                'nif':       col(2),
+                'direccion': col(3),
+                'cp':        col(4),
+                'poblacion': col(5),
+                'provincia': col(6),
+                'pais':      col(7),
+                'email':     col(8),
+                'telefono':  col(9),
+                'apellidos': '', 'tipo': '', 'fecha_alta': '', 'notas': '',
             }
     return None
 
 def get_todos_clientes():
-    rows = sheets_read("Clientes!A2:L200")
+    rows = sheets_read("Clientes!A2:J200")
     clientes = []
     for row in rows:
         if len(row) >= 2 and row[0]:
-            nombre = f"{row[1]} {row[2]}".strip() if len(row) > 2 else row[1]
-            clientes.append({'id': row[0], 'nombre': nombre,
-                'nif': row[3] if len(row) > 3 else '',
-                'email': row[4] if len(row) > 4 else '',
+            clientes.append({'id': row[0], 'nombre': row[1] if len(row) > 1 else '',
+                'nif': row[2] if len(row) > 2 else '',
+                'email': row[8] if len(row) > 8 else '',
                 'telefono': row[5] if len(row) > 5 else '',
                 'tipo': row[9] if len(row) > 9 else ''})
     return clientes
