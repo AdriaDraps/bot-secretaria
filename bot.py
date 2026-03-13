@@ -688,10 +688,10 @@ def insertar_factura_en_sheets(fecha, num_factura, cliente, nif, base, iva_amoun
         # Escribir datos de la nueva factura en la fila insertada
         nueva_fila = ultima_fila_datos + 1  # 1-indexed, justo la que acabamos de insertar
         valores = [[
-            str(nuevo_id), fecha, num_factura, '0',
+            nuevo_id, fecha, num_factura, 0,
             cliente, nif,
-            str(round(base, 2)), str(round(iva_amount, 2)),
-            str(round(ret_amount, 2)), str(round(total, 2)),
+            round(base, 2), round(iva_amount, 2),
+            round(ret_amount, 2), round(total, 2),
             '', '', 'Emitida', 'ORDINARIA'
         ]]
         svc.spreadsheets().values().update(
@@ -720,6 +720,34 @@ def insertar_factura_en_sheets(fecha, num_factura, cliente, nif, base, iva_amoun
             valueInputOption='USER_ENTERED',
             body={'values': [['Total']]}
         ).execute()
+
+        # Aplicar formato moneda (€) a columnas G, H, I, J, D
+        format_requests = []
+        currency_format = {
+            "numberFormat": {
+                "type": "CURRENCY",
+                "pattern": '#,##0.00 "€"'
+            }
+        }
+        for col_index in [3, 6, 7, 8, 9]:  # D=3, G=6, H=7, I=8, J=9 (0-indexed)
+            format_requests.append({
+                "repeatCell": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": nueva_fila - 1,  # 0-indexed
+                        "endRowIndex": nueva_fila,
+                        "startColumnIndex": col_index,
+                        "endColumnIndex": col_index + 1
+                    },
+                    "cell": {"userEnteredFormat": currency_format},
+                    "fields": "userEnteredFormat.numberFormat"
+                }
+            })
+        if format_requests:
+            svc.spreadsheets().batchUpdate(
+                spreadsheetId=SHEETS_ID,
+                body={'requests': format_requests}
+            ).execute()
 
         logger.info(f"Factura {num_factura} insertada en fila {nueva_fila}, totales en fila {fila_total}")
         return True
