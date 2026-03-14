@@ -443,7 +443,7 @@ def send_email(to_addr, subject, body_text):
             f'\r\n'
             f'{body_b64}'
         )
-        raw = base64.urlsafe_b64encode(raw_msg.encode('ascii')).decode('ascii')
+        raw = base64.urlsafe_b64encode(raw_msg.encode('utf-8')).decode('ascii')
         service.users().messages().send(userId='me', body={'raw': raw}).execute()
         logger.info(f"Email enviado a {to_addr}")
         return True
@@ -492,7 +492,7 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
             f'{pdf_b64}\r\n'
             f'--{boundary}--'
         )
-        raw = base64.urlsafe_b64encode(raw_msg.encode('ascii')).decode('ascii')
+        raw = base64.urlsafe_b64encode(raw_msg.encode('utf-8')).decode('ascii')
         service.users().messages().send(userId='me', body={'raw': raw}).execute()
         logger.info(f"Email con PDF enviado a {to_addr}")
         return True
