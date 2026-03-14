@@ -1845,8 +1845,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 fila = [
                     str(nuevo_id), fecha,
                     proveedor, nif, data.get('concepto',''),
-                    str(base), str(iva_pct), str(cuota_iva),
-                    str(irpf_pct), str(cuota_irpf), str(total)
+                    base, iva_pct, cuota_iva,
+                    irpf_pct, cuota_irpf, total
                 ]
                 ok = sheets_append('Facturas Recibidas', fila)
                 if ok:
