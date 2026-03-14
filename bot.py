@@ -823,6 +823,121 @@ def insertar_factura_en_sheets(fecha, num_factura, cliente, nif, base, iva_amoun
         logger.error(f"Error insertando factura en Sheets: {e}")
         return False
 
+
+# ─────────────────────────────────────────────
+# FACTURAS RECIBIDAS
+# Columnas: A=Id, B=Fecha, C=Proveedor, D=NIF, E=Concepto,
+#           F=Base, G=IVA%, H=CuotaIVA, I=IRPF%, J=CuotaIRPF, K=Total
+# ─────────────────────────────────────────────
+def get_facturas_recibidas(trimestre=None, año=None):
+    """Lee facturas recibidas con filtro opcional por trimestre/año."""
+    import pytz as _pytz
+    from datetime import datetime as _dt
+    tz   = _pytz.timezone(TIMEZONE)
+    year = año or _dt.now(tz).year
+    rows = sheets_read("Facturas Recibidas!A2:K200")
+    result = []
+    for row in rows:
+        if not row or not str(row[0]).strip().isdigit():
+            continue
+        def col(i): return str(row[i]).strip() if len(row) > i else ''
+        fecha = col(1)
+        if trimestre and fecha:
+            try:
+                mes = int(fecha[5:7]) if len(fecha) >= 7 else 0
+                t   = (mes - 1) // 3 + 1
+                if str(t) != str(trimestre):
+                    continue
+                if str(year) not in fecha:
+                    continue
+            except:
+                pass
+        result.append({
+            'id':        col(0), 'fecha':    col(1), 'proveedor': col(2),
+            'nif':       col(3), 'concepto': col(4), 'base':      col(5),
+            'iva_pct':   col(6), 'cuota_iva': col(7),
+            'irpf_pct':  col(8), 'cuota_irpf': col(9), 'total': col(10),
+        })
+    return result
+
+def siguiente_id_factura_recibida():
+    rows = sheets_read("Facturas Recibidas!A2:A200")
+    ids  = [int(str(r[0]).strip()) for r in rows if r and str(r[0]).strip().isdigit()]
+    return max(ids) + 1 if ids else 1
+
+def calcular_trimestre(trimestre, año=None):
+    """Calcula el resumen IVA/IRPF de un trimestre."""
+    import pytz as _pytz
+    from datetime import datetime as _dt
+    tz   = _pytz.timezone(TIMEZONE)
+    year = año or _dt.now(tz).year
+
+    meses = {1: (1,3), 2: (4,6), 3: (7,9), 4: (10,12)}
+    mes_inicio, mes_fin = meses.get(int(trimestre), (1,3))
+
+    def mes_en_rango(fecha_str):
+        try:
+            mes = int(fecha_str[5:7])
+            return mes_inicio <= mes <= mes_fin and str(year) in fecha_str
+        except:
+            return False
+
+    # ── Facturas emitidas ──
+    rows_emit = sheets_read("Facturas!A2:N200")
+    iva_repercutido  = 0.0
+    irpf_retenido    = 0.0
+    base_emit        = 0.0
+    facturas_emit    = 0
+
+    for row in rows_emit:
+        if not row or not str(row[0]).strip().isdigit():
+            continue
+        def ce(i): return str(row[i]).strip() if len(row) > i else ''
+        fecha = ce(1)  # B=Fecha
+        if not mes_en_rango(fecha):
+            continue
+        try: base_emit       += float(ce(6).replace(',','.').replace('€','').strip() or 0)
+        except: pass
+        try: iva_repercutido += float(ce(7).replace(',','.').replace('€','').strip() or 0)
+        except: pass
+        try: irpf_retenido   += float(ce(8).replace(',','.').replace('€','').strip() or 0)
+        except: pass
+        facturas_emit += 1
+
+    # ── Facturas recibidas ──
+    rows_recib = sheets_read("Facturas Recibidas!A2:K200")
+    iva_soportado = 0.0
+    base_recib    = 0.0
+    facturas_recib = 0
+
+    for row in rows_recib:
+        if not row or not str(row[0]).strip().isdigit():
+            continue
+        def cr(i): return str(row[i]).strip() if len(row) > i else ''
+        fecha = cr(1)
+        if not mes_en_rango(fecha):
+            continue
+        try: base_recib     += float(cr(5).replace(',','.').replace('€','').strip() or 0)
+        except: pass
+        try: iva_soportado  += float(cr(7).replace(',','.').replace('€','').strip() or 0)
+        except: pass
+        facturas_recib += 1
+
+    iva_liquidar = round(iva_repercutido - iva_soportado, 2)
+
+    nombres_t = {1:'1T (Ene-Mar)', 2:'2T (Abr-Jun)', 3:'3T (Jul-Sep)', 4:'4T (Oct-Dic)'}
+    return {
+        'trimestre':       f"{nombres_t.get(int(trimestre), str(trimestre))} {year}",
+        'facturas_emit':   facturas_emit,
+        'base_emit':       round(base_emit, 2),
+        'iva_repercutido': round(iva_repercutido, 2),
+        'irpf_retenido':   round(irpf_retenido, 2),
+        'facturas_recib':  facturas_recib,
+        'base_recib':      round(base_recib, 2),
+        'iva_soportado':   round(iva_soportado, 2),
+        'iva_liquidar':    iva_liquidar,
+    }
+
 def get_bbdd_context():
     try:
         clientes = get_todos_clientes()
@@ -1679,6 +1794,56 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if estado and 'pendiente' in estado.lower():
                         msg += f"\nTotal pendiente: {total_pend:.2f} €"
                     await update.message.reply_text(msg)
+
+            elif action == 'add_factura_recibida':
+                import pytz as _pytz2
+                from datetime import datetime as _dt2
+                tz2      = _pytz2.timezone(TIMEZONE)
+                base     = float(data.get('base_imponible', 0))
+                iva_pct  = float(data.get('iva', 21))
+                irpf_pct = float(data.get('irpf', 0))
+                cuota_iva  = round(base * iva_pct  / 100, 2)
+                cuota_irpf = round(base * irpf_pct / 100, 2)
+                total      = round(base + cuota_iva - cuota_irpf, 2)
+                nuevo_id   = siguiente_id_factura_recibida()
+                fecha      = data.get('fecha', _dt2.now(_pytz2.timezone(TIMEZONE)).strftime('%Y-%m-%d'))
+                fila = [
+                    str(nuevo_id), fecha,
+                    data.get('proveedor',''), data.get('nif',''), data.get('concepto',''),
+                    str(base), str(iva_pct), str(cuota_iva),
+                    str(irpf_pct), str(cuota_irpf), str(total)
+                ]
+                ok = sheets_append('Facturas Recibidas', fila)
+                if ok:
+                    acciones_completadas.append(
+                        f"✅ Factura recibida registrada\n"
+                        f"Proveedor: {data.get('proveedor','')}\n"
+                        f"Base: {base:.2f}€ | IVA: {cuota_iva:.2f}€ | Total: {total:.2f}€"
+                    )
+                else:
+                    acciones_completadas.append("❌ Error al registrar la factura recibida.")
+
+            elif action == 'calculo_trimestral':
+                t    = data.get('trimestre', 1)
+                anyo = data.get('año', None)
+                res  = calcular_trimestre(t, anyo)
+                signo = "a ingresar 🔴" if res['iva_liquidar'] > 0 else "a devolver 🟢"
+                msg = (
+                    f"📊 Liquidación {res['trimestre']}\n\n"
+                    f"FACTURAS EMITIDAS ({res['facturas_emit']})\n"
+                    f"  Base imponible:    {res['base_emit']:.2f} €\n"
+                    f"  IVA repercutido:   {res['iva_repercutido']:.2f} €\n"
+                    f"  IRPF retenido:     {res['irpf_retenido']:.2f} €\n\n"
+                    f"FACTURAS RECIBIDAS ({res['facturas_recib']})\n"
+                    f"  Base imponible:    {res['base_recib']:.2f} €\n"
+                    f"  IVA soportado:     {res['iva_soportado']:.2f} €\n\n"
+                    f"RESULTADO IVA\n"
+                    f"  {res['iva_repercutido']:.2f} - {res['iva_soportado']:.2f} = "
+                    f"{abs(res['iva_liquidar']):.2f} € {signo}\n\n"
+                    f"IRPF A INGRESAR\n"
+                    f"  {res['irpf_retenido']:.2f} €"
+                )
+                await update.message.reply_text(msg)
 
             elif action == 'cobrar_factura':
                 rows = sheets_read("Facturas!A2:N200")
