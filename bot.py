@@ -519,6 +519,7 @@ def sheets_read(rango):
             return []
         if '!' in rango:
             hoja, celdas = rango.split('!', 1)
+            hoja = hoja.strip("'")  # quitar comillas simples si las hay
             meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
             hojas_reales = {s['properties']['title'].lower(): s['properties']['title'] for s in meta.get('sheets', [])}
             hoja_real = hojas_reales.get(hoja.lower(), hoja)
