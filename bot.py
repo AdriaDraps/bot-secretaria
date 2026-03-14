@@ -1037,6 +1037,21 @@ BASE DE DATOS:
 {{"action":"query_facturas","estado":"Pendiente"}}
 {{"action":"cobrar_factura","num_factura":"15","fecha_cobro":"YYYY-MM-DD"}}
 
+FACTURAS RECIBIDAS (gastos del despacho):
+{"action":"add_factura_recibida","fecha":"YYYY-MM-DD","proveedor":"nombre empresa","nif":"","concepto":"","base_imponible":0,"iva":21,"irpf":0}
+- USA SIEMPRE add_factura_recibida cuando el usuario diga "factura recibida", "me han facturado", "factura de [empresa/proveedor]".
+- NUNCA uses create_invoice_bd ni create_invoice para facturas recibidas. Son completamente distintas.
+- create_invoice_bd = facturas que TU emites a clientes.
+- add_factura_recibida = facturas que recibes de proveedores.
+- Si falta NIF, ponlo vacio "" — el sistema lo rellena solo.
+- Si falta fecha, usa hoy.
+
+CALCULO TRIMESTRAL IVA/IRPF:
+{"action":"calculo_trimestral","trimestre":1,"año":2026}
+- Usa calculo_trimestral cuando pidan "liquidacion", "trimestre", "IVA trimestral", "modelo 303", "calcular IVA".
+- trimestre: 1=Ene-Mar, 2=Abr-Jun, 3=Jul-Sep, 4=Oct-Dic. Si no indica año, usa el actual.
+- NUNCA respondas con action:none para estas peticiones. Ejecuta directamente.
+
 ══════════════════════════════════════
 REGLAS GENERALES
 ══════════════════════════════════════
