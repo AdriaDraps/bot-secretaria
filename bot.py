@@ -645,9 +645,46 @@ def get_facturas(estado=None):
             'estado': est, 'fecha_cobro': row[10] if len(row) > 10 else ''})
     return facturas
 
+
+def sheets_insert_row_at(hoja, fila_valores, posicion=2):
+    """Inserta una fila en la posición indicada (1-indexed), desplazando las demás hacia abajo."""
+    try:
+        svc = get_sheets_service()
+        if not svc:
+            return False
+        meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
+        sheet_id = None
+        for s in meta.get('sheets', []):
+            if s['properties']['title'] == hoja:
+                sheet_id = s['properties']['sheetId']
+                break
+        if sheet_id is None:
+            return False
+        # Insertar fila vacía en posición (0-indexed = posicion-1)
+        svc.spreadsheets().batchUpdate(
+            spreadsheetId=SHEETS_ID,
+            body={'requests': [{'insertDimension': {
+                'range': {'sheetId': sheet_id, 'dimension': 'ROWS',
+                          'startIndex': posicion - 1, 'endIndex': posicion},
+                'inheritFromBefore': False
+            }}]}
+        ).execute()
+        # Escribir valores en la nueva fila
+        svc.spreadsheets().values().update(
+            spreadsheetId=SHEETS_ID,
+            range=f"{hoja}!A{posicion}",
+            valueInputOption='USER_ENTERED',
+            body={'values': [fila_valores]}
+        ).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error insertando fila en {hoja}: {e}")
+        return False
+
 def siguiente_id_cliente():
+    """Obtiene el ID más alto de la hoja Clientes y devuelve el siguiente."""
     rows = sheets_read("Clientes!A2:A200")
-    ids = [int(r[0]) for r in rows if r and str(r[0]).isdigit()]
+    ids = [int(str(r[0]).strip()) for r in rows if r and str(r[0]).strip().isdigit()]
     return max(ids) + 1 if ids else 1
 
 def siguiente_num_factura():
@@ -822,6 +859,20 @@ ACCIONES DISPONIBLES
 
 AGENDA:
 {{"action":"create_event","summary":"título","date":"YYYY-MM-DD","time":"HH:MM","duration_hours":1,"description":""}}
+
+FORMATO OBLIGATORIO DEL TÍTULO (campo "summary"):
+Siempre usa: [TIPO_EVENTO] - [CLIENTE] - [DESCRIPCIÓN]
+
+Tipos permitidos: REUNIÓN · JUICIO · LLAMADA · VIDEOLLAMADA · GESTIÓN · VENCIMIENTO · AUDIENCIA · COMPARECENCIA
+- Si hay cliente identificable: usa su nombre exacto
+- Si no hay cliente: usa GENERAL
+- Descripción: máximo 5 palabras
+
+Ejemplos:
+- "reunión con Juan Pérez sobre concurso" → REUNIÓN - Juan Pérez - Consulta concurso
+- "juicio García contra Banco Santander audiencia previa" → JUICIO - García - Audiencia previa
+- "llamar a María seguimiento" → LLAMADA - María - Seguimiento caso
+- "preparar escritos" → GESTIÓN - GENERAL - Preparar escritos
 {{"action":"update_event","event_name":"nombre","date":"YYYY-MM-DD","time":"HH:MM","duration_hours":1}}
 {{"action":"delete_event","event_name":"nombre"}}
 {{"action":"query_calendar","days":7}}
@@ -847,7 +898,9 @@ FACTURAS (CRÍTICO — leer bien):
 BASE DE DATOS:
 {{"action":"query_cliente","nombre":"nombre"}}
 {{"action":"query_clientes"}}
-{{"action":"add_cliente","nombre":"","nif":"","email":"","telefono":"","direccion":"","poblacion":"","cp":"","provincia":"","pais":"España"}}
+{{"action":"add_cliente","nombre":"","nif":"","direccion":"","cp":"",""poblacion":"","provincia":"","pais":"España","email":"","telefono":""}}
+- Campos obligatorios: nombre, nif. Pide los que falten antes de proceder.
+- Comprueba duplicados automáticamente. Si faltan datos no obligatorios déjalos vacíos.
 {{"action":"query_casos","cliente":"nombre opcional"}}
 {{"action":"add_caso","cliente":"","materia":"","descripcion":"","juzgado":"","autos":"","estado":"Activo","proxima_actuacion":"","fecha_actuacion":"YYYY-MM-DD"}}
 {{"action":"update_caso_estado","autos":"PA 1/2026","estado":"","proxima_actuacion":"","fecha_actuacion":"YYYY-MM-DD"}}
@@ -953,6 +1006,119 @@ async def daily_summary(bot):
 # ─────────────────────────────────────────────
 # RESUMEN SEMANAL (Sábados 9:00 AM)
 # ─────────────────────────────────────────────
+
+# ─────────────────────────────────────────────
+# RECORDATORIOS DE CITAS (Lunes a Viernes 8:00 AM)
+# ─────────────────────────────────────────────
+async def appointment_reminders(bot):
+    """Envía recordatorios de citas de mañana por Telegram y por email a los clientes."""
+    tz       = pytz.timezone(TIMEZONE)
+    today    = datetime.now(tz)
+    tomorrow = today + timedelta(days=1)
+
+    # Obtener eventos de mañana
+    t_start = tomorrow.replace(hour=0,  minute=0,  second=0,  microsecond=0)
+    t_end   = tomorrow.replace(hour=23, minute=59, second=59, microsecond=0)
+
+    service = get_calendar_service()
+    if not service:
+        return
+
+    try:
+        result = service.events().list(
+            calendarId='primary',
+            timeMin=t_start.isoformat(),
+            timeMax=t_end.isoformat(),
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        events = result.get('items', [])
+    except Exception as e:
+        logger.error(f"Error obteniendo eventos recordatorio: {e}")
+        return
+
+    if not events:
+        return
+
+    # Construir mensaje Telegram
+    fecha_str = tomorrow.strftime('%d/%m/%Y')
+    msg = f"📅 Recordatorio de citas para mañana ({fecha_str}):\n\n"
+    for ev in events:
+        start = ev.get('start', {})
+        hora  = ''
+        if 'dateTime' in start:
+            dt   = datetime.fromisoformat(start['dateTime'])
+            hora = dt.astimezone(tz).strftime('%H:%M')
+        elif 'date' in start:
+            hora = 'Todo el día'
+        titulo      = ev.get('summary', 'Sin título')
+        descripcion = ev.get('description', '')
+        msg += f"🕐 {hora} — {titulo}\n"
+        if descripcion:
+            msg += f"   {descripcion}\n"
+        msg += "\n"
+
+    try:
+        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+        logger.info("Recordatorio de citas enviado por Telegram.")
+    except Exception as e:
+        logger.error(f"Error enviando recordatorio Telegram: {e}")
+
+    # Enviar emails a clientes detectados
+    clientes = get_todos_clientes()
+
+    for ev in events:
+        start  = ev.get('start', {})
+        titulo = ev.get('summary', '')
+        hora   = ''
+        fecha_ev = ''
+        if 'dateTime' in start:
+            dt       = datetime.fromisoformat(start['dateTime'])
+            dt_local = dt.astimezone(tz)
+            hora     = dt_local.strftime('%H:%M')
+            fecha_ev = dt_local.strftime('%d/%m/%Y')
+        elif 'date' in start:
+            hora     = 'Todo el día'
+            fecha_ev = datetime.fromisoformat(start['date']).strftime('%d/%m/%Y')
+
+        titulo_norm = normalizar(titulo)
+
+        # Buscar clientes cuyo nombre aparezca en el título
+        for c in clientes:
+            nombre_c      = c.get('nombre', '')
+            nombre_c_norm = normalizar(nombre_c)
+            if not nombre_c_norm:
+                continue
+
+            # Coincidencia flexible: el nombre del cliente está en el título
+            if nombre_c_norm in titulo_norm:
+                email_c = c.get('email', '').strip()
+                if not email_c:
+                    logger.info(f"Cliente {nombre_c} sin email — no se envía recordatorio.")
+                    continue
+
+                # Recuperar datos completos del cliente
+                c_full = get_cliente(nombre_c)
+                nombre_display = c_full['nombre'] if c_full else nombre_c
+
+                asunto = f"Recordatorio de reunión mañana — {fecha_ev}"
+                cuerpo = (
+                    f"Estimado/a {nombre_display},\n\n"
+                    f"Le recordamos que mañana tenemos una reunión programada.\n\n"
+                    f"Detalles de la cita:\n"
+                    f"Fecha: {fecha_ev}\n"
+                    f"Hora: {hora}\n"
+                    f"Asunto: {titulo}\n\n"
+                    f"Si necesita modificar la cita, por favor indíquelo respondiendo a este correo.\n\n"
+                    f"Un cordial saludo.\n"
+                    f"AP Estudio Jurídico"
+                )
+                ok = send_email(email_c, asunto, cuerpo)
+                if ok:
+                    logger.info(f"Recordatorio enviado a {nombre_display} ({email_c})")
+                else:
+                    logger.error(f"Error enviando recordatorio a {nombre_display} ({email_c})")
+
 async def weekly_summary(bot):
     tz    = pytz.timezone(TIMEZONE)
     today = datetime.now(tz)
@@ -1395,21 +1561,55 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text(msg)
 
             elif action == 'add_cliente':
-                tz = pytz.timezone(TIMEZONE)
-                fecha_alta = datetime.now(tz).strftime('%Y-%m-%d')
-                nuevo_id = siguiente_id_cliente()
-                fila = [
-                    str(nuevo_id), data.get('nombre',''), data.get('apellidos',''),
-                    data.get('nif',''), data.get('email',''), data.get('telefono',''),
-                    data.get('direccion',''), data.get('poblacion',''), data.get('cp',''),
-                    data.get('tipo','Particular'), fecha_alta, data.get('notas','')
-                ]
-                ok = sheets_append('Clientes', fila)
-                if ok:
-                    nombre = f"{data.get('nombre','')} {data.get('apellidos','')}".strip()
-                    await update.message.reply_text(f"✅ Cliente añadido: {nombre} (ID: {nuevo_id})")
-                else:
-                    await update.message.reply_text("❌ Error al añadir el cliente.")
+                nombre_nuevo = data.get('nombre', '').strip()
+                nif_nuevo    = normalizar(data.get('nif', '').strip())
+
+                # Verificar duplicados
+                rows_check = sheets_read("Clientes!A2:J200")
+                duplicado = False
+                for row in rows_check:
+                    if len(row) < 2:
+                        continue
+                    nombre_exist = normalizar(str(row[1]))
+                    nif_exist    = normalizar(str(row[2])) if len(row) > 2 else ''
+                    if normalizar(nombre_nuevo) == nombre_exist:
+                        await update.message.reply_text(
+                            f"⚠️ Ya existe un cliente con el nombre '{row[1]}'. No se ha registrado.")
+                        duplicado = True
+                        break
+                    if nif_nuevo and nif_exist and nif_nuevo == nif_exist:
+                        await update.message.reply_text(
+                            f"⚠️ Ya existe un cliente con NIF/CIF '{row[2]}' ({row[1]}). No se ha registrado.")
+                        duplicado = True
+                        break
+
+                if not duplicado:
+                    nuevo_id = siguiente_id_cliente()
+                    # Columnas: Id, Cliente, NIF, Dirección, CP, Población, Provincia, País, Email, Teléfono
+                    fila = [
+                        str(nuevo_id),
+                        nombre_nuevo,
+                        data.get('nif', ''),
+                        data.get('direccion', ''),
+                        data.get('cp', ''),
+                        data.get('poblacion', ''),
+                        data.get('provincia', ''),
+                        data.get('pais', 'España'),
+                        data.get('email', ''),
+                        data.get('telefono', ''),
+                    ]
+                    # Insertar en fila 2 (debajo del encabezado), desplazando los demás
+                    ok = sheets_insert_row_at('Clientes', fila, posicion=2)
+                    if ok:
+                        msg = (f"✅ Cliente registrado correctamente\n"
+                               f"ID: {nuevo_id}\n"
+                               f"Nombre: {nombre_nuevo}\n"
+                               f"NIF/CIF: {data.get('nif','')}\n"
+                               f"Email: {data.get('email','')}\n"
+                               f"Teléfono: {data.get('telefono','')}")
+                        await update.message.reply_text(msg)
+                    else:
+                        await update.message.reply_text("❌ Error al registrar el cliente.")
 
             elif action == 'query_casos':
                 casos = get_casos_cliente(data.get('cliente'))
@@ -1608,8 +1808,12 @@ def main():
     def run_weekly():
         loop.create_task(weekly_summary(app.bot))
 
-    scheduler.add_job(run_daily,  'cron', hour=7, minute=0, day_of_week='mon-fri')
-    scheduler.add_job(run_weekly, 'cron', hour=9, minute=0, day_of_week='sat')
+    def run_reminders():
+        loop.create_task(appointment_reminders(app.bot))
+
+    scheduler.add_job(run_daily,     'cron', hour=7, minute=0, day_of_week='mon-fri')
+    scheduler.add_job(run_weekly,    'cron', hour=9, minute=0, day_of_week='sat')
+    scheduler.add_job(run_reminders, 'cron', hour=8, minute=0, day_of_week='mon-fri')
 
     scheduler.start()
     logger.info("✅ Bot Secretaria iniciado.")
