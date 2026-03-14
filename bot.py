@@ -522,7 +522,7 @@ def sheets_read(rango):
             meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
             hojas_reales = {s['properties']['title'].lower(): s['properties']['title'] for s in meta.get('sheets', [])}
             hoja_real = hojas_reales.get(hoja.lower(), hoja)
-            rango = f"{hoja_real}!{celdas}"
+            rango = f"'{hoja_real}'!{celdas}" if ' ' in hoja_real else f"{hoja_real}!{celdas}"
         result = svc.spreadsheets().values().get(spreadsheetId=SHEETS_ID, range=rango).execute()
         return result.get('values', [])
     except Exception as e:
@@ -537,8 +537,9 @@ def sheets_append(hoja, valores):
         meta = svc.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
         hojas_reales = {s['properties']['title'].lower(): s['properties']['title'] for s in meta.get('sheets', [])}
         hoja_real = hojas_reales.get(hoja.lower(), hoja)
+        hoja_rango = f"'{hoja_real}'!A1" if ' ' in hoja_real else f"{hoja_real}!A1"
         svc.spreadsheets().values().append(
-            spreadsheetId=SHEETS_ID, range=f"{hoja_real}!A1",
+            spreadsheetId=SHEETS_ID, range=hoja_rango,
             valueInputOption='USER_ENTERED', body={'values': [valores]}
         ).execute()
         return True
@@ -835,7 +836,7 @@ def get_facturas_recibidas(trimestre=None, año=None):
     from datetime import datetime as _dt
     tz   = _pytz.timezone(TIMEZONE)
     year = año or _dt.now(tz).year
-    rows = sheets_read("Facturas Recibidas!A2:K200")
+    rows = sheets_read("'Facturas Recibidas'!A2:K200")
     result = []
     for row in rows:
         if not row or not str(row[0]).strip().isdigit():
@@ -863,7 +864,7 @@ def get_facturas_recibidas(trimestre=None, año=None):
 
 def get_nif_proveedor(proveedor):
     """Busca el NIF de un proveedor en facturas recibidas anteriores."""
-    rows = sheets_read("Facturas Recibidas!A2:K200")
+    rows = sheets_read("'Facturas Recibidas'!A2:K200")
     prov_norm = normalizar(proveedor)
     for row in rows:
         if len(row) < 4:
@@ -876,7 +877,7 @@ def get_nif_proveedor(proveedor):
     return ''
 
 def siguiente_id_factura_recibida():
-    rows = sheets_read("Facturas Recibidas!A2:A200")
+    rows = sheets_read("'Facturas Recibidas'!A2:A200")
     ids  = [int(str(r[0]).strip()) for r in rows if r and str(r[0]).strip().isdigit()]
     return max(ids) + 1 if ids else 1
 
@@ -920,7 +921,7 @@ def calcular_trimestre(trimestre, año=None):
         facturas_emit += 1
 
     # ── Facturas recibidas ──
-    rows_recib = sheets_read("Facturas Recibidas!A2:K200")
+    rows_recib = sheets_read("'Facturas Recibidas'!A2:K200")
     iva_soportado = 0.0
     base_recib    = 0.0
     facturas_recib = 0
@@ -1875,7 +1876,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"RESULTADO IVA\n"
                     f"  {res['iva_repercutido']:.2f} - {res['iva_soportado']:.2f} = "
                     f"{abs(res['iva_liquidar']):.2f} € {signo}\n\n"
-                    f"IRPF A INGRESAR\n"
+                    f"IRPF RETENIDO (informativo — lo ingresa el pagador)\n"
                     f"  {res['irpf_retenido']:.2f} €"
                 )
                 await update.message.reply_text(msg)
