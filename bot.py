@@ -860,6 +860,21 @@ def get_facturas_recibidas(trimestre=None, año=None):
         })
     return result
 
+
+def get_nif_proveedor(proveedor):
+    """Busca el NIF de un proveedor en facturas recibidas anteriores."""
+    rows = sheets_read("Facturas Recibidas!A2:K200")
+    prov_norm = normalizar(proveedor)
+    for row in rows:
+        if len(row) < 4:
+            continue
+        nombre_row = normalizar(str(row[2]))
+        nif_row    = str(row[3]).strip()
+        if prov_norm in nombre_row or nombre_row in prov_norm:
+            if nif_row:
+                return nif_row
+    return ''
+
 def siguiente_id_factura_recibida():
     rows = sheets_read("Facturas Recibidas!A2:A200")
     ids  = [int(str(r[0]).strip()) for r in rows if r and str(r[0]).strip().isdigit()]
@@ -1798,7 +1813,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif action == 'add_factura_recibida':
                 import pytz as _pytz2
                 from datetime import datetime as _dt2
-                tz2      = _pytz2.timezone(TIMEZONE)
+                proveedor = data.get('proveedor', '')
+                # Auto-completar NIF si no se ha indicado
+                nif = data.get('nif', '').strip()
+                if not nif and proveedor:
+                    nif = get_nif_proveedor(proveedor)
                 base     = float(data.get('base_imponible', 0))
                 iva_pct  = float(data.get('iva', 21))
                 irpf_pct = float(data.get('irpf', 0))
@@ -1809,15 +1828,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 fecha      = data.get('fecha', _dt2.now(_pytz2.timezone(TIMEZONE)).strftime('%Y-%m-%d'))
                 fila = [
                     str(nuevo_id), fecha,
-                    data.get('proveedor',''), data.get('nif',''), data.get('concepto',''),
+                    proveedor, nif, data.get('concepto',''),
                     str(base), str(iva_pct), str(cuota_iva),
                     str(irpf_pct), str(cuota_irpf), str(total)
                 ]
                 ok = sheets_append('Facturas Recibidas', fila)
                 if ok:
+                    nif_txt = f" | NIF: {nif}" if nif else ""
                     acciones_completadas.append(
                         f"✅ Factura recibida registrada\n"
-                        f"Proveedor: {data.get('proveedor','')}\n"
+                        f"Proveedor: {proveedor}{nif_txt}\n"
                         f"Base: {base:.2f}€ | IVA: {cuota_iva:.2f}€ | Total: {total:.2f}€"
                     )
                 else:
