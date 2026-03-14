@@ -434,7 +434,7 @@ def send_email(to_addr, subject, body_text):
             + '<div style="margin-top:30px;padding-top:15px;border-top:1px solid #ddd;font-size:0.85em;color:#666;">'
             + '<em>Secretar\u00eda \u2014 AP Estudio Jur\u00eddico</em></div></body></html>')
         msg = MIMEText(html_body, 'html', 'utf-8')
-        msg['Subject'] = encode_subject(subject)
+        msg['Subject'] = subject
         msg['From']    = GMAIL_USER
         msg['To']      = to_addr
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
@@ -465,7 +465,7 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
         from email.mime.base import MIMEBase
         from email import encoders as _enc
         msg2 = MIMEMultipart()
-        msg2['Subject'] = encode_subject(subject)
+        msg2['Subject'] = subject
         msg2['From']    = GMAIL_USER
         msg2['To']      = to_addr
         msg2.attach(MIMEText(html_body, 'html', 'utf-8'))
