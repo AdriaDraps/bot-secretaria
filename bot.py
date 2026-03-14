@@ -421,6 +421,8 @@ def send_email(to_addr, subject, body_text):
         if not service:
             logger.error("No se pudo conectar con Gmail API")
             return False
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart as _MM
         formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', body_text)
         formatted = formatted.replace('\n', '<br>')
         logo_tag = '<img src="data:image/png;base64,' + LOGO_B64 + '" alt="AP Estudio Juridico" style="height:80px;width:auto;"/>'
@@ -431,19 +433,11 @@ def send_email(to_addr, subject, body_text):
             + formatted + '</div>'
             + '<div style="margin-top:30px;padding-top:15px;border-top:1px solid #ddd;font-size:0.85em;color:#666;">'
             + '<em>Secretar\u00eda \u2014 AP Estudio Jur\u00eddico</em></div></body></html>')
-        subj_enc = encode_subject(subject)
-        body_b64 = base64.b64encode(html_body.encode('utf-8')).decode('ascii')
-        raw_msg = (
-            f'From: {GMAIL_USER}\r\n'
-            f'To: {to_addr}\r\n'
-            f'Subject: {subj_enc}\r\n'
-            f'MIME-Version: 1.0\r\n'
-            f'Content-Type: text/html; charset=utf-8\r\n'
-            f'Content-Transfer-Encoding: base64\r\n'
-            f'\r\n'
-            f'{body_b64}'
-        )
-        raw = base64.urlsafe_b64encode(raw_msg.encode('utf-8')).decode('ascii')
+        msg = MIMEText(html_body, 'html', 'utf-8')
+        msg['Subject'] = encode_subject(subject)
+        msg['From']    = GMAIL_USER
+        msg['To']      = to_addr
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         service.users().messages().send(userId='me', body={'raw': raw}).execute()
         logger.info(f"Email enviado a {to_addr}")
         return True
@@ -467,32 +461,21 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
             + '<hr style="border:none;border-top:1px solid #ddd;margin:24px 0;">'
             + '<div style="font-size:0.85em;color:#666;text-align:center;"><em>Secretar\u00eda \u2014 AP Estudio Jur\u00eddico</em></div>'
             + '</body></html>')
-        subj_enc  = encode_subject(subject)
-        html_b64  = base64.b64encode(html_body.encode('utf-8')).decode('ascii')
-        pdf_b64   = base64.b64encode(pdf_bytes).decode('ascii')
-        fname_enc = encode_subject(pdf_filename)
-        boundary  = '----=_Part_boundary_AP'
-        raw_msg = (
-            f'From: {GMAIL_USER}\r\n'
-            f'To: {to_addr}\r\n'
-            f'Subject: {subj_enc}\r\n'
-            f'MIME-Version: 1.0\r\n'
-            f'Content-Type: multipart/mixed; boundary="{boundary}"\r\n'
-            f'\r\n'
-            f'--{boundary}\r\n'
-            f'Content-Type: text/html; charset=utf-8\r\n'
-            f'Content-Transfer-Encoding: base64\r\n'
-            f'\r\n'
-            f'{html_b64}\r\n'
-            f'--{boundary}\r\n'
-            f'Content-Type: application/pdf; name="{pdf_filename}"\r\n'
-            f'Content-Transfer-Encoding: base64\r\n'
-            f'Content-Disposition: attachment; filename="{pdf_filename}"\r\n'
-            f'\r\n'
-            f'{pdf_b64}\r\n'
-            f'--{boundary}--'
-        )
-        raw = base64.urlsafe_b64encode(raw_msg.encode('utf-8')).decode('ascii')
+        from email.mime.text import MIMEText
+        from email.mime.base import MIMEBase
+        from email import encoders as _enc
+        msg2 = MIMEMultipart()
+        msg2['Subject'] = encode_subject(subject)
+        msg2['From']    = GMAIL_USER
+        msg2['To']      = to_addr
+        msg2.attach(MIMEText(html_body, 'html', 'utf-8'))
+        part = MIMEBase('application', 'pdf')
+        part.set_payload(pdf_bytes)
+        _enc.encode_base64(part)
+        part.add_header('Content-Disposition', 'attachment', filename=pdf_filename)
+        part.add_header('Content-Type', 'application/pdf', name=pdf_filename)
+        msg2.attach(part)
+        raw = base64.urlsafe_b64encode(msg2.as_bytes()).decode()
         service.users().messages().send(userId='me', body={'raw': raw}).execute()
         logger.info(f"Email con PDF enviado a {to_addr}")
         return True
