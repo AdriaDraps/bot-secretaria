@@ -932,9 +932,11 @@ def calcular_trimestre(trimestre, año=None):
 
     for row in rows_recib:
         if not row or not str(row[0]).strip().isdigit():
+            logger.info(f"DEBUG fila saltada (no digit): {row[:3] if row else 'vacía'}")
             continue
         def cr(i): return str(row[i]).strip() if len(row) > i else ''
         fecha = cr(1)
+        logger.info(f"DEBUG fila {cr(0)}: fecha='{fecha}' mes_en_rango={mes_en_rango(fecha)}")
         if not mes_en_rango(fecha):
             continue
         try: base_recib     += float(cr(5).replace(',','.').replace('€','').strip() or 0)
