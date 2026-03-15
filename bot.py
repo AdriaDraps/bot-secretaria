@@ -1070,6 +1070,8 @@ REGLAS GENERALES
 - due_date en create_task es opcional, solo si el abogado indica fecha límite.
 - NUNCA pidas datos que el sistema puede obtener automáticamente de la BD (NIF, domicilio, número de factura, email del cliente).
 - Solo pide datos con action:none si son estrictamente necesarios y no están en la BD (por ejemplo, un cliente nuevo).
+- En los correos enviados a clientes NUNCA incluyas el nombre del abogado. Firma siempre como "Secretaría AP Estudio Jurídico".
+- Para emails de confirmación de cita: "Estimado/a [nombre], le confirmamos su cita programada para el [fecha] a las [hora]h. Saludos cordiales, Secretaría AP Estudio Jurídico"
 """
 
 def ask_claude(user_msg, calendar_context=""):
@@ -1263,7 +1265,7 @@ async def appointment_reminders(bot):
                     f"Asunto: {titulo}\n\n"
                     f"Si necesita modificar la cita, por favor indíquelo respondiendo a este correo.\n\n"
                     f"Un cordial saludo.\n"
-                    f"AP Estudio Jurídico"
+                    f"Secretaría AP Estudio Jurídico"
                 )
                 ok = send_email(email_c, asunto, cuerpo)
                 if ok:
@@ -1668,7 +1670,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 num_safe     = data['num_factura'].replace('/', '-').replace(' ', '')
                 cliente_safe = data['cliente_nombre'].replace(' ', '_').encode('ascii', 'ignore').decode()
                 pdf_name     = f"Factura_{num_safe}_{cliente_safe}.pdf"
-                body_email   = "Estimado/a cliente,\n\nLe adjunto la factura por los servicios prestados por este despacho.\n\nSaludos cordiales,\nAP Estudio Jurídico"
+                body_email   = "Estimado/a cliente,\n\nLe adjunto la factura por los servicios prestados por este despacho.\n\nSaludos cordiales,\nSecretaría AP Estudio Jurídico"
                 ok = send_email_with_pdf(
                     data['cliente_email'],
                     f"Factura {data['num_factura']} — AP Estudio Jurídico",
@@ -1942,7 +1944,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     num_safe    = num_factura.replace('/', '-').replace(' ', '')
                     pdf_name    = f"Factura_{num_safe}_{nombre_completo.replace(' ','_')}.pdf"
                     email_dest  = c['email'].strip() if c.get('email','').strip() else None
-                    body_email  = "Estimado/a cliente,\n\nLe adjunto la factura por los servicios prestados por este despacho.\n\nSaludos cordiales,\nAP Estudio Jurídico"
+                    body_email  = "Estimado/a cliente,\n\nLe adjunto la factura por los servicios prestados por este despacho.\n\nSaludos cordiales,\nSecretaría AP Estudio Jurídico"
                     if email_dest:
                         ok = send_email_with_pdf(email_dest, f"Factura {num_factura} — AP Estudio Jurídico", body_email, pdf_bytes, pdf_name)
                         if ok:
