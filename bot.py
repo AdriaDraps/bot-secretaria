@@ -840,7 +840,7 @@ def get_facturas_recibidas(trimestre=None, año=None):
     rows = sheets_read("'Facturas Recibidas'!A2:K200")
     result = []
     for row in rows:
-        if not row or not str(row[0]).strip().isdigit():
+        if not row or len(row) < 3:
             continue
         def col(i): return str(row[i]).strip() if len(row) > i else ''
         fecha = col(1)
@@ -880,7 +880,12 @@ def get_nif_proveedor(proveedor):
 def siguiente_id_factura_recibida():
     rows = sheets_read("'Facturas Recibidas'!A2:A200")
     ids  = [int(str(r[0]).strip()) for r in rows if r and str(r[0]).strip().isdigit()]
-    return max(ids) + 1 if ids else 1
+    if ids:
+        return max(ids) + 1
+    # Si no hay IDs, contar filas con datos
+    rows_all = sheets_read("'Facturas Recibidas'!B2:B200")
+    count = sum(1 for r in rows_all if r and r[0].strip())
+    return count + 1
 
 def calcular_trimestre(trimestre, año=None):
     """Calcula el resumen IVA/IRPF de un trimestre."""
@@ -923,21 +928,16 @@ def calcular_trimestre(trimestre, año=None):
 
     # ── Facturas recibidas ──
     rows_recib = sheets_read("'Facturas Recibidas'!A2:K200")
-    logger.info(f"DEBUG calcular_trimestre: rows_recib={len(rows_recib)} filas")
-    if rows_recib:
-        logger.info(f"DEBUG primera fila recibida: {rows_recib[0]}")
     iva_soportado = 0.0
     base_recib    = 0.0
     facturas_recib = 0
 
     for row in rows_recib:
-        if not row or not str(row[0]).strip().isdigit():
-            logger.info(f"DEBUG fila saltada (no digit): {row[:3] if row else 'vacía'}")
+        if not row or len(row) < 3:
             continue
         def cr(i): return str(row[i]).strip() if len(row) > i else ''
         fecha = cr(1)
-        logger.info(f"DEBUG fila {cr(0)}: fecha='{fecha}' mes_en_rango={mes_en_rango(fecha)}")
-        if not mes_en_rango(fecha):
+        if not fecha or not mes_en_rango(fecha):
             continue
         try: base_recib     += float(cr(5).replace(',','.').replace('€','').strip() or 0)
         except: pass
