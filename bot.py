@@ -923,6 +923,9 @@ def calcular_trimestre(trimestre, año=None):
 
     # ── Facturas recibidas ──
     rows_recib = sheets_read("'Facturas Recibidas'!A2:K200")
+    logger.info(f"DEBUG calcular_trimestre: rows_recib={len(rows_recib)} filas")
+    if rows_recib:
+        logger.info(f"DEBUG primera fila recibida: {rows_recib[0]}")
     iva_soportado = 0.0
     base_recib    = 0.0
     facturas_recib = 0
