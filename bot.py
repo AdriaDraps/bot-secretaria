@@ -1725,6 +1725,54 @@ async def cmd_correos_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     CORREOS_ACTIVOS = False
     await update.message.reply_text("⏸ Procesado de correos de procuradores DESACTIVADO.")
 
+async def cmd_resumen_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+    global RESUMEN_ACTIVO
+    RESUMEN_ACTIVO = True
+    await update.message.reply_text("✅ Resumen diario (7h) ACTIVADO.")
+
+async def cmd_resumen_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+    global RESUMEN_ACTIVO
+    RESUMEN_ACTIVO = False
+    await update.message.reply_text("⏸ Resumen diario (7h) DESACTIVADO.")
+
+async def cmd_recordatorios_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+    global RECORDATORIOS_ACTIVO
+    RECORDATORIOS_ACTIVO = True
+    await update.message.reply_text("✅ Recordatorio de citas (8h) ACTIVADO.")
+
+async def cmd_recordatorios_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+    global RECORDATORIOS_ACTIVO
+    RECORDATORIOS_ACTIVO = False
+    await update.message.reply_text("⏸ Recordatorio de citas (8h) DESACTIVADO.")
+
+async def cmd_diario_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+    global DIARIO_ACTIVO
+    DIARIO_ACTIVO = True
+    await update.message.reply_text("✅ Diario de secretaría (19h) ACTIVADO.")
+
+async def cmd_diario_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+    global DIARIO_ACTIVO
+    DIARIO_ACTIVO = False
+    await update.message.reply_text("⏸ Diario de secretaría (19h) DESACTIVADO.")
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── SEGURIDAD: solo responde al chat autorizado ──
     allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
@@ -2938,8 +2986,14 @@ def main():
     app.add_handler(CommandHandler("iniciar",     cmd_iniciar))
     app.add_handler(CommandHandler("funciones",   cmd_funciones))
     app.add_handler(CommandHandler("correos",     cmd_correos))
-    app.add_handler(CommandHandler("correos_on",  cmd_correos_on))
-    app.add_handler(CommandHandler("correos_off", cmd_correos_off))
+    app.add_handler(CommandHandler("correos_on",        cmd_correos_on))
+    app.add_handler(CommandHandler("correos_off",       cmd_correos_off))
+    app.add_handler(CommandHandler("resumen_on",        cmd_resumen_on))
+    app.add_handler(CommandHandler("resumen_off",       cmd_resumen_off))
+    app.add_handler(CommandHandler("recordatorios_on",  cmd_recordatorios_on))
+    app.add_handler(CommandHandler("recordatorios_off", cmd_recordatorios_off))
+    app.add_handler(CommandHandler("diario_on",         cmd_diario_on))
+    app.add_handler(CommandHandler("diario_off",        cmd_diario_off))
     app.add_handler(CommandHandler("bbdd",    cmd_bbdd))
     app.add_handler(CommandHandler("initbbdd", cmd_initbbdd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
