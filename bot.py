@@ -1515,18 +1515,27 @@ async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_correos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Fuerza la revisión de correos manualmente."""
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
     await update.message.reply_text("⏳ Revisando correos...")
     await procesar_correos(context.bot)
     await update.message.reply_text("✅ Revisión completada.")
 
 async def cmd_correos_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Activa el procesado automático de correos de procuradores."""
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
     global CORREOS_ACTIVOS
     CORREOS_ACTIVOS = True
     await update.message.reply_text("✅ Procesado de correos de procuradores ACTIVADO.")
 
 async def cmd_correos_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Desactiva el procesado automático de correos de procuradores."""
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
     global CORREOS_ACTIVOS
     CORREOS_ACTIVOS = False
     await update.message.reply_text("⏸ Procesado de correos de procuradores DESACTIVADO.")
