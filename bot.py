@@ -60,6 +60,63 @@ DRIVE_FOLDER_RESOLUCIONES = 'Resoluciones_Test'
 diario_secretaria = []  # Se r
 CORREOS_ACTIVOS = True  # Se puede activar/desactivar con /correos_on y /correos_offesetea cada día al enviar el diario
 
+FESTIVOS_JUDICIALES_2026 = {
+    (1, 1),   # Año Nuevo
+    (1, 6),   # Reyes
+    (4, 3),   # Viernes Santo
+    (5, 1),   # Día del Trabajo
+    (8, 15),  # Asunción (sábado, but include anyway)
+    (10, 12), # Día del Pilar
+    (12, 8),  # Inmaculada
+    (12, 25), # Navidad
+}
+
+PLANTILLAS = {
+    'citacion': {
+        'asunto': 'Citación — AP Estudio Jurídico',
+        'cuerpo': ('Estimado/a {nombre},\n\n'
+                   'Por medio de la presente le citamos en nuestro despacho el día {fecha} a las {hora}h.\n\n'
+                   'Le rogamos confirme su asistencia.\n\n'
+                   'Saludos cordiales,\nSecretaría AP Estudio Jurídico'),
+    },
+    'acuse': {
+        'asunto': 'Acuse de recibo — AP Estudio Jurídico',
+        'cuerpo': ('Estimado/a {nombre},\n\n'
+                   'Confirmamos la correcta recepción de la documentación remitida en relación con el asunto: {asunto}.\n\n'
+                   'Quedamos a su disposición.\n\n'
+                   'Saludos cordiales,\nSecretaría AP Estudio Jurídico'),
+    },
+    'solicitud_docs': {
+        'asunto': 'Solicitud de documentación — AP Estudio Jurídico',
+        'cuerpo': ('Estimado/a {nombre},\n\n'
+                   'En relación con el asunto {asunto}, le solicitamos que nos haga llegar la siguiente documentación:\n\n'
+                   '{documentos}\n\n'
+                   'Le agradecemos que nos la remita a la mayor brevedad.\n\n'
+                   'Saludos cordiales,\nSecretaría AP Estudio Jurídico'),
+    },
+    'notificacion_resolucion': {
+        'asunto': 'Notificación resolución — {procedimiento} — AP Estudio Jurídico',
+        'cuerpo': ('Estimado/a {nombre},\n\n'
+                   'Le informamos que hemos recibido la siguiente resolución en el procedimiento {procedimiento}:\n\n'
+                   '{resolucion}\n\n'
+                   '{plazos}\n\n'
+                   'Quedamos a su disposición.\n\n'
+                   'Saludos cordiales,\nSecretaría AP Estudio Jurídico'),
+    },
+    'instrucciones_procurador': {
+        'asunto': 'Instrucciones — {procedimiento} — AP Estudio Jurídico',
+        'cuerpo': ('Estimado/a {nombre_procurador},\n\n'
+                   'En relación con el procedimiento {procedimiento} ante {juzgado}, le remitimos las siguientes instrucciones:\n\n'
+                   '{instrucciones}\n\n'
+                   'Rogamos acuse de recibo.\n\n'
+                   'Saludos,\nAdrià Paños Ruiz\nAP Estudio Jurídico'),
+    },
+}
+
+PERITOS = {}       # email: nombre — add manually
+ASEGURADORAS = {}  # email: nombre — add manually
+OTROS_DESPACHOS = {}  # email: nombre — add manually
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -1010,6 +1067,24 @@ def get_bbdd_context():
         logger.error(f"Error get_bbdd_context: {e}")
         return ""
 
+def es_dia_habil_judicial(fecha):
+    """Returns True if date is a judicial working day (Mon-Fri, not festivo)."""
+    if fecha.weekday() >= 5:
+        return False
+    if (fecha.month, fecha.day) in FESTIVOS_JUDICIALES_2026:
+        return False
+    return True
+
+def calcular_plazo_habiles(fecha_inicio, dias_habiles):
+    """Calculates deadline date adding judicial working days."""
+    fecha = fecha_inicio
+    dias_contados = 0
+    while dias_contados < dias_habiles:
+        fecha += timedelta(days=1)
+        if es_dia_habil_judicial(fecha):
+            dias_contados += 1
+    return fecha
+
 SYSTEM_PROMPT = """Eres la secretaria virtual del despacho de abogados AP Estudio Jurídico.
 Ayudas al abogado Adrià con agenda, emails, tareas y facturación.
 
@@ -1084,6 +1159,30 @@ CALCULO TRIMESTRAL IVA/IRPF:
 - Usa calculo_trimestral cuando pidan "liquidacion", "trimestre", "IVA trimestral", "modelo 303", "calcular IVA".
 - trimestre: 1=Ene-Mar, 2=Abr-Jun, 3=Jul-Sep, 4=Oct-Dic. Si no indica año, usa el actual.
 - NUNCA respondas con action:none para estas peticiones. Ejecuta directamente.
+
+PLAZOS JUDICIALES (días hábiles):
+{"action":"calcular_plazo","dias_habiles":20,"desde":"hoy"}
+- Usa cuando pidan calcular plazos procesales, vencimientos, días hábiles.
+- "desde": "hoy" o fecha "YYYY-MM-DD". Excluye fines de semana y festivos nacionales.
+
+PLANTILLAS DE COMUNICACIÓN:
+{"action":"send_plantilla","tipo":"citacion","to":"email@ejemplo.com","nombre":"Nombre Cliente","fecha":"DD/MM/YYYY","hora":"HH:MM","asunto":""}
+{"action":"send_plantilla","tipo":"acuse","to":"email@ejemplo.com","nombre":"Nombre Cliente","asunto":"descripción asunto"}
+{"action":"send_plantilla","tipo":"solicitud_docs","to":"email@ejemplo.com","nombre":"Nombre Cliente","asunto":"descripción","documentos":"lista de documentos"}
+{"action":"send_plantilla","tipo":"notificacion_resolucion","to":"email@ejemplo.com","nombre":"Nombre Cliente","procedimiento":"PA 1/2026","resolucion":"texto fallo","plazos":"texto plazos"}
+- tipos disponibles: citacion, acuse, solicitud_docs, notificacion_resolucion
+
+PROVISIONES DE FONDOS:
+{"action":"create_provision","cliente":"nombre del cliente","concepto":"descripción","importe":500.00}
+- Usa cuando el abogado diga "provisión de fondos", "provisión", "anticipo de honorarios".
+
+EMAILS SIN RESPUESTA:
+{"action":"check_pending_emails","dias":3}
+- Busca emails enviados sin respuesta en los últimos X días.
+
+INSTRUCCIONES A PROCURADOR:
+{"action":"send_instrucciones_procurador","procurador":"monica@lopezmanso.com","procedimiento":"PA 112/2024","juzgado":"Juzgado nombre","instrucciones":"texto libre con instrucciones"}
+- Usa cuando el abogado quiera dar instrucciones a un procurador sobre un procedimiento.
 
 ══════════════════════════════════════
 REGLAS GENERALES
@@ -2013,6 +2112,136 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     else:
                         acciones_completadas.append(f"✅ Factura {num_factura} creada — sin email en BD para {nombre_completo}\nTotal: {total:.2f} €")
 
+            elif action == 'calcular_plazo':
+                desde_str = data.get('desde', 'hoy')
+                dias = int(data.get('dias_habiles', 0))
+                tz = pytz.timezone(TIMEZONE)
+                if desde_str == 'hoy':
+                    fecha_inicio = datetime.now(tz).date()
+                else:
+                    try:
+                        fecha_inicio = datetime.strptime(desde_str, '%Y-%m-%d').date()
+                    except:
+                        fecha_inicio = datetime.now(tz).date()
+                fecha_venc = calcular_plazo_habiles(fecha_inicio, dias)
+                await update.message.reply_text(
+                    f"⚖️ Plazo de {dias} días hábiles\n"
+                    f"Inicio: {fecha_inicio.strftime('%d/%m/%Y')}\n"
+                    f"Vencimiento: {fecha_venc.strftime('%d/%m/%Y')}"
+                )
+
+            elif action == 'send_plantilla':
+                tipo = data.get('tipo', '')
+                plantilla = PLANTILLAS.get(tipo)
+                if not plantilla:
+                    await update.message.reply_text(f"❌ Plantilla '{tipo}' no encontrada. Disponibles: {', '.join(PLANTILLAS.keys())}")
+                else:
+                    to_addr = data.get('to', '')
+                    if not to_addr:
+                        await update.message.reply_text("❌ Falta el email del destinatario.")
+                    else:
+                        campos = {k: data.get(k, '') for k in ['nombre','fecha','hora','asunto','documentos','resolucion','plazos','procedimiento','nombre_procurador','juzgado','instrucciones']}
+                        try:
+                            asunto = plantilla['asunto'].format(**campos)
+                            cuerpo = plantilla['cuerpo'].format(**campos)
+                        except KeyError as e:
+                            await update.message.reply_text(f"❌ Falta el campo {e} para esta plantilla.")
+                            continue
+                        ok = send_email(to_addr, asunto, cuerpo)
+                        if ok:
+                            await update.message.reply_text(f"✅ Email enviado a {to_addr}\nPlantilla: {tipo}")
+                        else:
+                            await update.message.reply_text("❌ Error al enviar el email.")
+
+            elif action == 'create_provision':
+                c = get_cliente(data.get('cliente', ''))
+                if not c:
+                    await update.message.reply_text(f"❌ No encontré el cliente '{data.get('cliente')}' en la base de datos.")
+                else:
+                    nombre_completo = f"{c['nombre']} {c['apellidos']}".strip()
+                    tz = pytz.timezone(TIMEZONE)
+                    fecha = datetime.now(tz).strftime('%Y-%m-%d')
+                    importe = float(data.get('importe', 0))
+                    concepto = data.get('concepto', 'Provisión de fondos')
+                    rows = sheets_read("Facturas!A2:A200")
+                    ids = [int(r[0]) for r in rows if r and str(r[0]).strip().isdigit()]
+                    num = f"P{max(ids) + 1 if ids else 1}/{datetime.now(tz).year}"
+                    fila = [num, c.get('id',''), nombre_completo, fecha, f"PROVISIÓN: {concepto}", str(importe), '0', '0', str(importe), 'Pendiente', '']
+                    ok = sheets_append('Facturas', fila)
+                    if ok:
+                        await update.message.reply_text(
+                            f"✅ Provisión de fondos registrada\n"
+                            f"Nº: {num}\nCliente: {nombre_completo}\nImporte: {importe:.2f} €\nConcepto: {concepto}"
+                        )
+                    else:
+                        await update.message.reply_text("❌ Error al registrar la provisión.")
+
+            elif action == 'check_pending_emails':
+                dias_atras = int(data.get('dias', 3))
+                try:
+                    service = get_gmail_service()
+                    if not service:
+                        await update.message.reply_text("❌ No se pudo conectar con Gmail.")
+                    else:
+                        from datetime import timedelta as td
+                        tz = pytz.timezone(TIMEZONE)
+                        fecha_desde = (datetime.now(tz) - td(days=dias_atras)).strftime('%Y/%m/%d')
+                        results = service.users().messages().list(
+                            userId='me',
+                            q=f'in:sent after:{fecha_desde}',
+                            maxResults=30
+                        ).execute()
+                        mensajes_enviados = results.get('messages', [])
+                        sin_respuesta = []
+                        for m in mensajes_enviados:
+                            msg = service.users().messages().get(userId='me', id=m['id'], format='metadata',
+                                metadataHeaders=['Subject','To','Thread-Id']).execute()
+                            headers = {h['name']: h['value'] for h in msg.get('payload', {}).get('headers', [])}
+                            thread_id = msg.get('threadId')
+                            thread = service.users().threads().get(userId='me', id=thread_id).execute()
+                            if len(thread.get('messages', [])) == 1:
+                                sin_respuesta.append({
+                                    'to': headers.get('To',''),
+                                    'subject': headers.get('Subject','(sin asunto)')
+                                })
+                        if not sin_respuesta:
+                            await update.message.reply_text(f"✅ No hay emails sin respuesta en los últimos {dias_atras} días.")
+                        else:
+                            lines = [f"📭 Emails sin respuesta (últimos {dias_atras} días):"]
+                            for e in sin_respuesta[:10]:
+                                lines.append(f"  • {e['to']} — {e['subject'][:50]}")
+                            await update.message.reply_text('\n'.join(lines))
+                except Exception as e:
+                    logger.error(f"Error check_pending_emails: {e}")
+                    await update.message.reply_text("❌ Error al consultar emails.")
+
+            elif action == 'send_instrucciones_procurador':
+                procurador_email = data.get('procurador', '')
+                if not procurador_email:
+                    nombre_proc = data.get('nombre_procurador', '')
+                    for email, nombre in PROCURADORES.items():
+                        if nombre_proc.lower() in nombre.lower():
+                            procurador_email = email
+                            break
+                if not procurador_email:
+                    await update.message.reply_text("❌ No encontré el email del procurador.")
+                else:
+                    nombre_proc = PROCURADORES.get(procurador_email, procurador_email)
+                    plantilla = PLANTILLAS['instrucciones_procurador']
+                    campos = {
+                        'nombre_procurador': nombre_proc,
+                        'procedimiento': data.get('procedimiento', ''),
+                        'juzgado': data.get('juzgado', ''),
+                        'instrucciones': data.get('instrucciones', ''),
+                    }
+                    asunto = plantilla['asunto'].format(**campos)
+                    cuerpo = plantilla['cuerpo'].format(**campos)
+                    ok = send_email(procurador_email, asunto, cuerpo)
+                    if ok:
+                        await update.message.reply_text(f"✅ Instrucciones enviadas a {nombre_proc} ({procurador_email})")
+                    else:
+                        await update.message.reply_text("❌ Error al enviar instrucciones.")
+
             else:
                 response_text = data.get('response', raw)
                 # Si la respuesta es un JSON, procesarlo de nuevo
@@ -2413,7 +2642,7 @@ async def procesar_correos(bot):
                         actuacion = plazo.get('actuacion', 'Actuación procesal')
                         desde = plazo.get('desde', 'notificación')
                         if dias > 0:
-                            fecha_venc = (datetime.now(tz) + timedelta(days=dias)).date()
+                            fecha_venc = calcular_plazo_habiles(datetime.now(tz).date(), dias)
                             service_cal = get_calendar_service()
                             if service_cal:
                                 event = {
