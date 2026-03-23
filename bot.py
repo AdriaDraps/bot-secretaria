@@ -1503,12 +1503,18 @@ async def cmd_bbdd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error: {e}")
 
 async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
     await update.message.reply_text(
         f"Su Chat ID es: `{update.effective_chat.id}`",
         parse_mode='Markdown'
     )
 
 async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
     await update.message.reply_text("⏳ Generando resumen...")
     await daily_summary(context.bot)
     await update.message.reply_text("✅ Resumen enviado a su email.")
