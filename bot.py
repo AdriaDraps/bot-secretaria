@@ -501,6 +501,20 @@ def encode_subject(subject):
     encoded = _b64.b64encode(subject.encode('utf-8')).decode('ascii')
     return f'=?utf-8?b?{encoded}?='
 
+def _build_html_body(body_text):
+    """Construye el cuerpo HTML con logo embebido como data URI."""
+    logo_b64 = base64.b64encode(LOGO_BYTES).decode('ascii')
+    logo_src = f'data:image/png;base64,{logo_b64}'
+    formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', body_text)
+    formatted = formatted.replace('\n', '<br>')
+    return (
+        '<html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;">'
+        f'<div style="text-align:center;margin-bottom:24px;"><img src="{logo_src}" alt="AP Estudio Juridico" style="height:80px;width:auto;"/></div>'
+        '<div style="border-top:3px solid #b8960c;padding-top:20px;">' + formatted + '</div>'
+        '<div style="margin-top:30px;padding-top:15px;border-top:1px solid #ddd;font-size:0.85em;color:#666;">'
+        '<em>Secretar\u00eda \u2014 AP Estudio Jur\u00eddico</em></div></body></html>'
+    )
+
 def send_email(to_addr, subject, body_text):
     try:
         service = get_gmail_service()
@@ -509,27 +523,13 @@ def send_email(to_addr, subject, body_text):
             return False
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
-        from email.mime.image import MIMEImage
-        formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', body_text)
-        formatted = formatted.replace('\n', '<br>')
-        html_body = (
-            '<html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;">'
-            '<div style="text-align:center;margin-bottom:24px;"><img src="cid:logo_ap" alt="AP Estudio Juridico" style="height:80px;width:auto;"/></div>'
-            '<div style="border-top:3px solid #b8960c;padding-top:20px;">' + formatted + '</div>'
-            '<div style="margin-top:30px;padding-top:15px;border-top:1px solid #ddd;font-size:0.85em;color:#666;">'
-            '<em>Secretar\u00eda \u2014 AP Estudio Jur\u00eddico</em></div></body></html>')
-        msg_root = MIMEMultipart('related')
-        msg_root['Subject'] = subject
-        msg_root['From']    = GMAIL_USER
-        msg_root['To']      = to_addr
-        msg_alt = MIMEMultipart('alternative')
-        msg_root.attach(msg_alt)
-        msg_alt.attach(MIMEText(html_body, 'html', 'utf-8'))
-        logo_mime = MIMEImage(LOGO_BYTES, _subtype='png')
-        logo_mime.add_header('Content-ID', '<logo_ap>')
-        logo_mime.add_header('Content-Disposition', 'inline', filename='logo.png')
-        msg_root.attach(logo_mime)
-        raw = base64.urlsafe_b64encode(msg_root.as_bytes()).decode()
+        html_body = _build_html_body(body_text)
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From']    = GMAIL_USER
+        msg['To']      = to_addr
+        msg.attach(MIMEText(html_body, 'html', 'utf-8'))
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         service.users().messages().send(userId='me', body={'raw': raw}).execute()
         logger.info(f"Email enviado a {to_addr}")
         return True
@@ -545,31 +545,14 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
             return False
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
-        from email.mime.image import MIMEImage
         from email.mime.base import MIMEBase
         from email import encoders as _enc
-        formatted = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', body_text)
-        formatted = formatted.replace('\n', '<br>')
-        html_body = (
-            '<html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:20px;">'
-            '<div style="text-align:center;margin-bottom:24px;"><img src="cid:logo_ap" alt="AP Estudio Juridico" style="height:80px;width:auto;"/></div>'
-            '<div>' + formatted + '</div>'
-            '<hr style="border:none;border-top:1px solid #ddd;margin:24px 0;">'
-            '<div style="font-size:0.85em;color:#666;text-align:center;"><em>Secretar\u00eda \u2014 AP Estudio Jur\u00eddico</em></div>'
-            '</body></html>')
+        html_body = _build_html_body(body_text)
         msg_root = MIMEMultipart('mixed')
         msg_root['Subject'] = subject
         msg_root['From']    = GMAIL_USER
         msg_root['To']      = to_addr
-        msg_rel = MIMEMultipart('related')
-        msg_root.attach(msg_rel)
-        msg_alt = MIMEMultipart('alternative')
-        msg_rel.attach(msg_alt)
-        msg_alt.attach(MIMEText(html_body, 'html', 'utf-8'))
-        logo_mime = MIMEImage(LOGO_BYTES, _subtype='png')
-        logo_mime.add_header('Content-ID', '<logo_ap>')
-        logo_mime.add_header('Content-Disposition', 'inline', filename='logo.png')
-        msg_rel.attach(logo_mime)
+        msg_root.attach(MIMEText(html_body, 'html', 'utf-8'))
         part = MIMEBase('application', 'pdf')
         part.set_payload(pdf_bytes)
         _enc.encode_base64(part)
