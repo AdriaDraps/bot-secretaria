@@ -525,8 +525,8 @@ def send_email(to_addr, subject, body_text):
         from email.mime.text import MIMEText
         html_body = _build_html_body(body_text)
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From']    = f'AP Estudio Jurídico <{GMAIL_USER}>'
+        msg['Subject'] = encode_subject(subject)
+        msg['From']    = f'AP Estudio Juridico <{GMAIL_USER}>'
         msg['To']      = to_addr
         msg.attach(MIMEText(html_body, 'html', 'utf-8'))
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
@@ -549,8 +549,8 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
         from email import encoders as _enc
         html_body = _build_html_body(body_text)
         msg_root = MIMEMultipart('mixed')
-        msg_root['Subject'] = subject
-        msg_root['From']    = GMAIL_USER
+        msg_root['Subject'] = encode_subject(subject)
+        msg_root['From']    = f'AP Estudio Juridico <{GMAIL_USER}>'
         msg_root['To']      = to_addr
         msg_root.attach(MIMEText(html_body, 'html', 'utf-8'))
         part = MIMEBase('application', 'pdf')
@@ -2536,8 +2536,8 @@ def gmail_reply(msg_id, to, subject, body):
         message_id_header = headers.get('Message-ID', '')
 
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject if subject.startswith('Re:') else f'Re: {subject}'
-        msg['From'] = GMAIL_USER
+        msg['Subject'] = encode_subject(subject if subject.startswith('Re:') else f'Re: {subject}')
+        msg['From'] = f'AP Estudio Juridico <{GMAIL_USER}>'
         msg['To'] = to
         if message_id_header:
             msg['In-Reply-To'] = message_id_header
@@ -2901,8 +2901,8 @@ async def enviar_diario_secretaria(bot):
             from email.mime.multipart import MIMEMultipart as _MM
             from email.mime.text import MIMEText as _MT
             msg_root = _MM('alternative')
-            msg_root['Subject'] = f'📋 Diario de Secretaría — {hoy}'
-            msg_root['From'] = GMAIL_USER
+            msg_root['Subject'] = encode_subject(f'Diario de Secretaria - {hoy}')
+            msg_root['From'] = f'AP Estudio Juridico <{GMAIL_USER}>'
             msg_root['To'] = GMAIL_USER
             msg_root.attach(_MT(cuerpo_html, 'html', 'utf-8'))
             raw = base64.urlsafe_b64encode(msg_root.as_bytes()).decode()
