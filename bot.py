@@ -58,7 +58,10 @@ PROCURADORES = {
 DRIVE_FOLDER_RESOLUCIONES = 'Resoluciones_Test'
 
 diario_secretaria = []  # Se r
-CORREOS_ACTIVOS = True  # Se puede activar/desactivar con /correos_on y /correos_offesetea cada día al enviar el diario
+CORREOS_ACTIVOS     = True   # Procesado automático de correos de procuradores
+RESUMEN_ACTIVO      = True   # Resumen diario por email (7h)
+RECORDATORIOS_ACTIVO = True  # Recordatorio de citas (8h)
+DIARIO_ACTIVO       = True   # Diario de secretaría (19h)
 
 FESTIVOS_JUDICIALES_2026 = {
     (1, 1),   # Año Nuevo
@@ -1618,6 +1621,50 @@ async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await daily_summary(context.bot)
     await update.message.reply_text("✅ Resumen enviado a su email.")
 
+async def cmd_funciones(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra el estado de todas las funciones automáticas y permite activarlas/desactivarlas."""
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+    global CORREOS_ACTIVOS, RESUMEN_ACTIVO, RECORDATORIOS_ACTIVO, DIARIO_ACTIVO
+
+    args = context.args
+    if args:
+        cmd = args[0].lower()
+        if cmd == 'correos':
+            CORREOS_ACTIVOS = not CORREOS_ACTIVOS
+            estado = "✅ activado" if CORREOS_ACTIVOS else "⏸ desactivado"
+            await update.message.reply_text(f"Correos de procuradores: {estado}")
+            return
+        elif cmd == 'resumen':
+            RESUMEN_ACTIVO = not RESUMEN_ACTIVO
+            estado = "✅ activado" if RESUMEN_ACTIVO else "⏸ desactivado"
+            await update.message.reply_text(f"Resumen diario (7h): {estado}")
+            return
+        elif cmd == 'recordatorios':
+            RECORDATORIOS_ACTIVO = not RECORDATORIOS_ACTIVO
+            estado = "✅ activado" if RECORDATORIOS_ACTIVO else "⏸ desactivado"
+            await update.message.reply_text(f"Recordatorio de citas (8h): {estado}")
+            return
+        elif cmd == 'diario':
+            DIARIO_ACTIVO = not DIARIO_ACTIVO
+            estado = "✅ activado" if DIARIO_ACTIVO else "⏸ desactivado"
+            await update.message.reply_text(f"Diario de secretaría (19h): {estado}")
+            return
+
+    on  = "✅"
+    off = "⏸"
+    msg = (
+        "⚙️ <b>Estado de funciones automáticas</b>\n\n"
+        f"{on if CORREOS_ACTIVOS else off} <b>Correos procuradores</b> — revisión cada 2h (L-V)\n"
+        f"{on if RESUMEN_ACTIVO else off} <b>Resumen diario</b> — email a las 7h (L-V)\n"
+        f"{on if RECORDATORIOS_ACTIVO else off} <b>Recordatorio citas</b> — aviso a las 8h (L-V)\n"
+        f"{on if DIARIO_ACTIVO else off} <b>Diario secretaría</b> — resumen email a las 19h (L-V)\n\n"
+        "<i>Para activar/desactivar: /funciones [nombre]</i>\n"
+        "Nombres: <code>correos</code> · <code>resumen</code> · <code>recordatorios</code> · <code>diario</code>"
+    )
+    await update.message.reply_text(msg, parse_mode='HTML')
+
 async def cmd_correos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Fuerza la revisión de correos manualmente."""
     allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
@@ -2821,19 +2868,23 @@ def main():
         loop = asyncio.get_running_loop()
 
         def run_daily():
-            loop.create_task(daily_summary(application.bot))
+            if RESUMEN_ACTIVO:
+                loop.create_task(daily_summary(application.bot))
 
         def run_weekly():
             loop.create_task(weekly_summary(application.bot))
 
         def run_reminders():
-            loop.create_task(appointment_reminders(application.bot))
+            if RECORDATORIOS_ACTIVO:
+                loop.create_task(appointment_reminders(application.bot))
 
         def run_correos():
-            loop.create_task(procesar_correos(application.bot))
+            if CORREOS_ACTIVOS:
+                loop.create_task(procesar_correos(application.bot))
 
         def run_diario():
-            loop.create_task(enviar_diario_secretaria(application.bot))
+            if DIARIO_ACTIVO:
+                loop.create_task(enviar_diario_secretaria(application.bot))
 
         scheduler.add_job(run_daily,     'cron', hour=7,  minute=0, day_of_week='mon-fri')
         scheduler.add_job(run_weekly,    'cron', hour=9,  minute=0, day_of_week='sat')
@@ -2849,8 +2900,9 @@ def main():
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("id",      cmd_id))
     app.add_handler(CommandHandler("resumen", cmd_resumen))
-    app.add_handler(CommandHandler("correos", cmd_correos))
-    app.add_handler(CommandHandler("correos_on", cmd_correos_on))
+    app.add_handler(CommandHandler("funciones",   cmd_funciones))
+    app.add_handler(CommandHandler("correos",     cmd_correos))
+    app.add_handler(CommandHandler("correos_on",  cmd_correos_on))
     app.add_handler(CommandHandler("correos_off", cmd_correos_off))
     app.add_handler(CommandHandler("bbdd",    cmd_bbdd))
     app.add_handler(CommandHandler("initbbdd", cmd_initbbdd))
