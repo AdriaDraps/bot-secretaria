@@ -496,10 +496,8 @@ def generar_factura(num_factura, cliente_nombre, cliente_nif, cliente_domicilio,
 
 
 def encode_subject(subject):
-    """Codifica el asunto del email en base64 UTF-8 para evitar caracteres corruptos."""
-    import base64 as _b64
-    encoded = _b64.b64encode(subject.encode('utf-8')).decode('ascii')
-    return f'=?utf-8?b?{encoded}?='
+    """Devuelve el asunto tal cual; la serialización UTF-8 se hace en el envío."""
+    return subject
 
 def _build_html_body(body_text):
     """Construye el cuerpo HTML con logo embebido como data URI."""
@@ -526,10 +524,10 @@ def send_email(to_addr, subject, body_text):
         html_body = _build_html_body(body_text)
         msg = MIMEMultipart('alternative')
         msg['Subject'] = encode_subject(subject)
-        msg['From']    = f'AP Estudio Juridico <{GMAIL_USER}>'
+        msg['From']    = f'AP Estudio Jurídico <{GMAIL_USER}>'
         msg['To']      = to_addr
         msg.attach(MIMEText(html_body, 'html', 'utf-8'))
-        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        raw = base64.urlsafe_b64encode(msg.as_string().encode('utf-8')).decode()
         service.users().messages().send(userId='me', body={'raw': raw}).execute()
         logger.info(f"Email enviado a {to_addr}")
         return True
@@ -550,7 +548,7 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
         html_body = _build_html_body(body_text)
         msg_root = MIMEMultipart('mixed')
         msg_root['Subject'] = encode_subject(subject)
-        msg_root['From']    = f'AP Estudio Juridico <{GMAIL_USER}>'
+        msg_root['From']    = f'AP Estudio Jurídico <{GMAIL_USER}>'
         msg_root['To']      = to_addr
         msg_root.attach(MIMEText(html_body, 'html', 'utf-8'))
         part = MIMEBase('application', 'pdf')
@@ -559,7 +557,7 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
         part.add_header('Content-Disposition', 'attachment', filename=pdf_filename)
         part.add_header('Content-Type', 'application/pdf', name=pdf_filename)
         msg_root.attach(part)
-        raw = base64.urlsafe_b64encode(msg_root.as_bytes()).decode()
+        raw = base64.urlsafe_b64encode(msg_root.as_string().encode('utf-8')).decode()
         service.users().messages().send(userId='me', body={'raw': raw}).execute()
         logger.info(f"Email con PDF enviado a {to_addr}")
         return True
@@ -2537,7 +2535,7 @@ def gmail_reply(msg_id, to, subject, body):
 
         msg = MIMEMultipart('alternative')
         msg['Subject'] = encode_subject(subject if subject.startswith('Re:') else f'Re: {subject}')
-        msg['From'] = f'AP Estudio Juridico <{GMAIL_USER}>'
+        msg['From'] = f'AP Estudio Jurídico <{GMAIL_USER}>'
         msg['To'] = to
         if message_id_header:
             msg['In-Reply-To'] = message_id_header
@@ -2552,7 +2550,7 @@ def gmail_reply(msg_id, to, subject, body):
         )
         msg.attach(MIMEText(html_body, 'html', 'utf-8'))
 
-        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        raw = base64.urlsafe_b64encode(msg.as_string().encode('utf-8')).decode()
         service.users().messages().send(
             userId='me',
             body={'raw': raw, 'threadId': thread_id}
@@ -2902,10 +2900,10 @@ async def enviar_diario_secretaria(bot):
             from email.mime.text import MIMEText as _MT
             msg_root = _MM('alternative')
             msg_root['Subject'] = encode_subject(f'Diario de Secretaria - {hoy}')
-            msg_root['From'] = f'AP Estudio Juridico <{GMAIL_USER}>'
+            msg_root['From'] = f'AP Estudio Jurídico <{GMAIL_USER}>'
             msg_root['To'] = GMAIL_USER
             msg_root.attach(_MT(cuerpo_html, 'html', 'utf-8'))
-            raw = base64.urlsafe_b64encode(msg_root.as_bytes()).decode()
+            raw = base64.urlsafe_b64encode(msg_root.as_string().encode('utf-8')).decode()
             service.users().messages().send(userId='me', body={'raw': raw}).execute()
             logger.info("Diario de secretaría enviado.")
     except Exception as e:
