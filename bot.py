@@ -2548,7 +2548,36 @@ async def enviar_diario_secretaria(bot):
 # MAIN
 # ─────────────────────────────────────────────
 def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    scheduler = AsyncIOScheduler(timezone=pytz.timezone(TIMEZONE))
+
+    async def post_init(application: Application) -> None:
+        loop = asyncio.get_running_loop()
+
+        def run_daily():
+            loop.create_task(daily_summary(application.bot))
+
+        def run_weekly():
+            loop.create_task(weekly_summary(application.bot))
+
+        def run_reminders():
+            loop.create_task(appointment_reminders(application.bot))
+
+        def run_correos():
+            loop.create_task(procesar_correos(application.bot))
+
+        def run_diario():
+            loop.create_task(enviar_diario_secretaria(application.bot))
+
+        scheduler.add_job(run_daily,     'cron', hour=7,  minute=0, day_of_week='mon-fri')
+        scheduler.add_job(run_weekly,    'cron', hour=9,  minute=0, day_of_week='sat')
+        scheduler.add_job(run_reminders, 'cron', hour=8,  minute=0, day_of_week='mon-fri')
+        scheduler.add_job(run_correos,   'cron', hour='8,10,12,14,16,18,20', minute=0, day_of_week='mon-fri')
+        scheduler.add_job(run_diario,    'cron', hour=19, minute=0, day_of_week='mon-fri')
+
+        scheduler.start()
+        logger.info("✅ Bot Secretaria iniciado.")
+
+    app = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("id",      cmd_id))
@@ -2558,33 +2587,6 @@ def main():
     app.add_handler(CommandHandler("initbbdd", cmd_initbbdd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    scheduler = AsyncIOScheduler(timezone=pytz.timezone(TIMEZONE))
-
-    loop = asyncio.get_event_loop()
-
-    def run_daily():
-        loop.create_task(daily_summary(app.bot))
-
-    def run_weekly():
-        loop.create_task(weekly_summary(app.bot))
-
-    def run_reminders():
-        loop.create_task(appointment_reminders(app.bot))
-
-    def run_correos():
-        loop.create_task(procesar_correos(app.bot))
-
-    def run_diario():
-        loop.create_task(enviar_diario_secretaria(app.bot))
-
-    scheduler.add_job(run_daily,     'cron', hour=7,  minute=0, day_of_week='mon-fri')
-    scheduler.add_job(run_weekly,    'cron', hour=9,  minute=0, day_of_week='sat')
-    scheduler.add_job(run_reminders, 'cron', hour=8,  minute=0, day_of_week='mon-fri')
-    scheduler.add_job(run_correos,   'cron', hour='8,10,12,14,16,18,20', minute=0, day_of_week='mon-fri')
-    scheduler.add_job(run_diario,    'cron', hour=19, minute=0, day_of_week='mon-fri')
-
-    scheduler.start()
-    logger.info("✅ Bot Secretaria iniciado.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
