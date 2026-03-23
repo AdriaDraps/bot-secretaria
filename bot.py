@@ -57,7 +57,8 @@ PROCURADORES = {
 
 DRIVE_FOLDER_RESOLUCIONES = 'Resoluciones_Test'
 
-diario_secretaria = []  # Se resetea cada día al enviar el diario
+diario_secretaria = []  # Se r
+CORREOS_ACTIVOS = True  # Se puede activar/desactivar con /correos_on y /correos_offesetea cada día al enviar el diario
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -1518,6 +1519,18 @@ async def cmd_correos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await procesar_correos(context.bot)
     await update.message.reply_text("✅ Revisión completada.")
 
+async def cmd_correos_on(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Activa el procesado automático de correos de procuradores."""
+    global CORREOS_ACTIVOS
+    CORREOS_ACTIVOS = True
+    await update.message.reply_text("✅ Procesado de correos de procuradores ACTIVADO.")
+
+async def cmd_correos_off(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Desactiva el procesado automático de correos de procuradores."""
+    global CORREOS_ACTIVOS
+    CORREOS_ACTIVOS = False
+    await update.message.reply_text("⏸ Procesado de correos de procuradores DESACTIVADO.")
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── SEGURIDAD: solo responde al chat autorizado ──
     allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
@@ -2265,12 +2278,18 @@ def analizar_resolucion_con_claude(texto_pdf, asunto, remitente):
         f"{texto_pdf[:6000]}\n"
         f"{'...' if len(texto_pdf) > 6000 else ''}"
         f"{texto_pdf[-3000:] if len(texto_pdf) > 6000 else ''}\n\n"
+        'INSTRUCCIONES CRÍTICAS para el campo "parte_dispositiva":\n'
+        '- Extrae ÚNICAMENTE el contenido de la sección "PARTE DISPOSITIVA" o "FALLO" del documento.\n'
+        '- NO resumas los antecedentes ni los fundamentos jurídicos.\n'
+        '- Si el auto DENIEGA algo, el fallo debe decir claramente que se deniega.\n'
+        '- Si el auto ESTIMA algo, el fallo debe decir claramente que se estima.\n'
+        '- Copia literalmente las primeras líneas del fallo si es posible.\n\n'
         'JSON de salida (exactamente este formato):\n'
         '{\n'
         '  "tipo": "Auto|Sentencia|Decreto|Providencia|Diligencia",\n'
         '  "juzgado": "nombre del juzgado o tribunal",\n'
         '  "num_procedimiento": "PA 112/2024 o similar",\n'
-        '  "parte_dispositiva": "resumen del fallo en 2-3 frases",\n'
+        '  "parte_dispositiva": "texto literal o resumen fiel del fallo/parte dispositiva",\n'
         '  "plazos": [\n'
         '    {"dias": 5, "desde": "notificacion", "actuacion": "interponer recurso de reforma"}\n'
         '  ],\n'
@@ -2313,7 +2332,10 @@ def analizar_resolucion_con_claude(texto_pdf, asunto, remitente):
 
 async def procesar_correos(bot):
     """Revisa correos no leídos, procesa resoluciones de procuradores."""
-    global diario_secretaria
+    global diario_secretaria, CORREOS_ACTIVOS
+    if not CORREOS_ACTIVOS:
+        logger.info("Revisión de correos desactivada.")
+        return
     logger.info("Iniciando revisión de correos...")
 
     mensajes = gmail_get_unread(max_results=20)
@@ -2585,6 +2607,8 @@ def main():
     app.add_handler(CommandHandler("id",      cmd_id))
     app.add_handler(CommandHandler("resumen", cmd_resumen))
     app.add_handler(CommandHandler("correos", cmd_correos))
+    app.add_handler(CommandHandler("correos_on", cmd_correos_on))
+    app.add_handler(CommandHandler("correos_off", cmd_correos_off))
     app.add_handler(CommandHandler("bbdd",    cmd_bbdd))
     app.add_handler(CommandHandler("initbbdd", cmd_initbbdd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
