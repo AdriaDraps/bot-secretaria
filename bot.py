@@ -1621,6 +1621,39 @@ async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await daily_summary(context.bot)
     await update.message.reply_text("✅ Resumen enviado a su email.")
 
+async def cmd_estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra qué funciones automáticas están activas o inactivas."""
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+    on, off = "✅", "⏸"
+    msg = (
+        "⚙️ <b>Estado de funciones automáticas</b>\n\n"
+        f"{on if CORREOS_ACTIVOS else off} Correos procuradores (L-V cada 2h)\n"
+        f"{on if RESUMEN_ACTIVO else off} Resumen diario (L-V 7h)\n"
+        f"{on if RECORDATORIOS_ACTIVO else off} Recordatorio citas (L-V 8h)\n"
+        f"{on if DIARIO_ACTIVO else off} Diario secretaría (L-V 19h)"
+    )
+    await update.message.reply_text(msg, parse_mode='HTML')
+
+async def cmd_pausar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pausa todas las funciones automáticas."""
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+    global CORREOS_ACTIVOS, RESUMEN_ACTIVO, RECORDATORIOS_ACTIVO, DIARIO_ACTIVO
+    CORREOS_ACTIVOS = RESUMEN_ACTIVO = RECORDATORIOS_ACTIVO = DIARIO_ACTIVO = False
+    await update.message.reply_text("⏸ Todas las funciones automáticas <b>pausadas</b>.", parse_mode='HTML')
+
+async def cmd_iniciar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Activa todas las funciones automáticas."""
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+    global CORREOS_ACTIVOS, RESUMEN_ACTIVO, RECORDATORIOS_ACTIVO, DIARIO_ACTIVO
+    CORREOS_ACTIVOS = RESUMEN_ACTIVO = RECORDATORIOS_ACTIVO = DIARIO_ACTIVO = True
+    await update.message.reply_text("✅ Todas las funciones automáticas <b>activadas</b>.", parse_mode='HTML')
+
 async def cmd_funciones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra el estado de todas las funciones automáticas y permite activarlas/desactivarlas."""
     allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
@@ -2900,6 +2933,9 @@ def main():
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("id",      cmd_id))
     app.add_handler(CommandHandler("resumen", cmd_resumen))
+    app.add_handler(CommandHandler("estado",      cmd_estado))
+    app.add_handler(CommandHandler("pausar",      cmd_pausar))
+    app.add_handler(CommandHandler("iniciar",     cmd_iniciar))
     app.add_handler(CommandHandler("funciones",   cmd_funciones))
     app.add_handler(CommandHandler("correos",     cmd_correos))
     app.add_handler(CommandHandler("correos_on",  cmd_correos_on))
