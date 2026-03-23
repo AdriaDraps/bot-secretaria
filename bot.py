@@ -526,7 +526,7 @@ def send_email(to_addr, subject, body_text):
         html_body = _build_html_body(body_text)
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
-        msg['From']    = GMAIL_USER
+        msg['From']    = f'AP Estudio Jurídico <{GMAIL_USER}>'
         msg['To']      = to_addr
         msg.attach(MIMEText(html_body, 'html', 'utf-8'))
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
