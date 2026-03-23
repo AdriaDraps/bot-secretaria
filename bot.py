@@ -2488,8 +2488,7 @@ async def procesar_correos(bot):
                 'remitente': remitente_raw,
                 'asunto': asunto,
             })
-
-        gmail_mark_read(ref['id'])
+            # No marcamos como leído los correos que no son de procuradores
 
     logger.info(f"Revisión de correos completada. Procesados: {len(mensajes)}")
 
