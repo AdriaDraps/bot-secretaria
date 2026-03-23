@@ -2262,7 +2262,9 @@ def analizar_resolucion_con_claude(texto_pdf, asunto, remitente):
         f"Asunto del correo: {asunto}\n"
         f"Remitente: {remitente}\n\n"
         "Texto de la resolución:\n"
-        f"{texto_pdf[:8000]}\n\n"
+        f"{texto_pdf[:6000]}\n"
+        f"{'...' if len(texto_pdf) > 6000 else ''}"
+        f"{texto_pdf[-3000:] if len(texto_pdf) > 6000 else ''}\n\n"
         'JSON de salida (exactamente este formato):\n'
         '{\n'
         '  "tipo": "Auto|Sentencia|Decreto|Providencia|Diligencia",\n'
