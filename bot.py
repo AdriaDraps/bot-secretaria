@@ -1617,10 +1617,31 @@ async def cmd_test_correo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     subject = 'Prueba encoding: Citación — Jurídico'
     subj_enc  = _rfc2047(subject)
     from_name = _rfc2047('AP Estudio Jurídico')
+
+    # Construir el mensaje y extraer los bytes reales
+    from email.mime.multipart import MIMEMultipart as _MM
+    from email.mime.text import MIMEText as _MT
+    _msg = _MM('alternative')
+    _msg['Subject'] = subj_enc
+    _msg['From']    = f'{from_name} <{GMAIL_USER}>'
+    _msg['To']      = GMAIL_USER
+    _msg.attach(_MT('test', 'html', 'utf-8'))
+    raw_b = _msg.as_bytes()
+    lines = raw_b.split(b'\n')
+    subj_b = next((l for l in lines if l.startswith(b'Subject')), b'NOT FOUND')
+    from_b = next((l for l in lines if l.startswith(b'From')), b'NOT FOUND')
+    subj_ascii = all(c < 128 for c in subj_b)
+    from_ascii = all(c < 128 for c in from_b)
+
     await update.message.reply_text(
-        f"<b>Diagnóstico headers:</b>\n"
+        f"<b>1) _rfc2047():</b>\n"
         f"Subject enc: <code>{subj_enc}</code>\n"
-        f"From name:   <code>{from_name}</code>",
+        f"From name:   <code>{from_name}</code>\n\n"
+        f"<b>2) msg.as_bytes() headers:</b>\n"
+        f"Subject ASCII: {subj_ascii}\n"
+        f"<code>{subj_b.decode('ascii', errors='replace')}</code>\n"
+        f"From ASCII: {from_ascii}\n"
+        f"<code>{from_b.decode('ascii', errors='replace')}</code>",
         parse_mode='HTML'
     )
     ok = send_email(
