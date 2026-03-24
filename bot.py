@@ -498,12 +498,14 @@ def generar_factura(num_factura, cliente_nombre, cliente_nif, cliente_domicilio,
 
 
 def _rfc2047(s):
-    """Codifica una cadena como RFC 2047 base64 si contiene caracteres no-ASCII."""
+    """Codifica una cadena como RFC 2047 base64 si contiene caracteres no-ASCII.
+    Implementacion manual con base64 puro para maxima compatibilidad."""
     try:
         s.encode('ascii')
         return s
     except UnicodeEncodeError:
-        return _EmailHeader(s, 'utf-8').encode()
+        b64 = base64.b64encode(s.encode('utf-8')).decode('ascii')
+        return f'=?utf-8?b?{b64}?='
 
 def _build_html_body(body_text):
     """Construye el cuerpo HTML con logo embebido como data URI."""
@@ -1608,14 +1610,22 @@ async def cmd_version(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Bot version: <code>{BOT_VERSION}</code>", parse_mode='HTML')
 
 async def cmd_test_correo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Envía un correo de prueba a tu propio Gmail para verificar encoding."""
+    """Envía un correo de prueba y muestra los headers codificados para diagnóstico."""
     allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
     if allowed_id and str(update.effective_chat.id) != str(allowed_id):
         return
-    await update.message.reply_text("Enviando correo de prueba...")
+    subject = 'Prueba encoding: Citación — Jurídico'
+    subj_enc  = _rfc2047(subject)
+    from_name = _rfc2047('AP Estudio Jurídico')
+    await update.message.reply_text(
+        f"<b>Diagnóstico headers:</b>\n"
+        f"Subject enc: <code>{subj_enc}</code>\n"
+        f"From name:   <code>{from_name}</code>",
+        parse_mode='HTML'
+    )
     ok = send_email(
         GMAIL_USER,
-        'Prueba encoding: Citación — Jurídico',
+        subject,
         'Caracteres españoles: á é í ó ú ñ ü\n\nSi ves esto correcto, el encoding funciona.',
     )
     if ok:
