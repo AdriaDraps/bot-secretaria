@@ -1601,6 +1601,28 @@ async def cmd_resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await daily_summary(context.bot)
     await update.message.reply_text("✅ Resumen enviado a su email.")
 
+BOT_VERSION = "d582429-rfc2047"  # actualizar con cada deploy
+
+async def cmd_version(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra la versión del bot desplegada en Railway."""
+    await update.message.reply_text(f"Bot version: <code>{BOT_VERSION}</code>", parse_mode='HTML')
+
+async def cmd_test_correo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Envía un correo de prueba a tu propio Gmail para verificar encoding."""
+    allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
+    if allowed_id and str(update.effective_chat.id) != str(allowed_id):
+        return
+    await update.message.reply_text("Enviando correo de prueba...")
+    ok = send_email(
+        GMAIL_USER,
+        'Prueba encoding: Citación — Jurídico',
+        'Caracteres españoles: á é í ó ú ñ ü\n\nSi ves esto correcto, el encoding funciona.',
+    )
+    if ok:
+        await update.message.reply_text("✅ Enviado. Comprueba tu Gmail ahora.")
+    else:
+        await update.message.reply_text("❌ Error al enviar. Revisa los logs de Railway.")
+
 async def cmd_estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra qué funciones automáticas están activas o inactivas."""
     allowed_id = os.environ.get('TELEGRAM_CHAT_ID', TELEGRAM_CHAT_ID)
@@ -2973,6 +2995,8 @@ def main():
     app.add_handler(CommandHandler("recordatorios_off", cmd_recordatorios_off))
     app.add_handler(CommandHandler("diario_on",         cmd_diario_on))
     app.add_handler(CommandHandler("diario_off",        cmd_diario_off))
+    app.add_handler(CommandHandler("version",      cmd_version))
+    app.add_handler(CommandHandler("test_correo",  cmd_test_correo))
     app.add_handler(CommandHandler("bbdd",    cmd_bbdd))
     app.add_handler(CommandHandler("initbbdd", cmd_initbbdd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
