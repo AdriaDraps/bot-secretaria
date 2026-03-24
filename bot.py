@@ -11,6 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from email.message import EmailMessage
+from email.header import Header as _EmailHeader
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
@@ -496,9 +497,13 @@ def generar_factura(num_factura, cliente_nombre, cliente_nif, cliente_domicilio,
     return buffer.getvalue(), total
 
 
-def encode_subject(subject):
-    """Devuelve el asunto tal cual; la serialización UTF-8 se hace en el envío."""
-    return subject
+def _rfc2047(s):
+    """Codifica una cadena como RFC 2047 base64 si contiene caracteres no-ASCII."""
+    try:
+        s.encode('ascii')
+        return s
+    except UnicodeEncodeError:
+        return _EmailHeader(s, 'utf-8').encode()
 
 def _build_html_body(body_text):
     """Construye el cuerpo HTML con logo embebido como data URI."""
@@ -521,11 +526,11 @@ def send_email(to_addr, subject, body_text):
             logger.error("No se pudo conectar con Gmail API")
             return False
         html_body = _build_html_body(body_text)
-        msg = EmailMessage()
-        msg['Subject'] = subject
-        msg['From']    = f'AP Estudio Jurídico <{GMAIL_USER}>'
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = _rfc2047(subject)
+        msg['From']    = f'{_rfc2047("AP Estudio Jurídico")} <{GMAIL_USER}>'
         msg['To']      = to_addr
-        msg.set_content(html_body, subtype='html', charset='utf-8')
+        msg.attach(MIMEText(html_body, 'html', 'utf-8'))
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         service.users().messages().send(userId='me', body={'raw': raw}).execute()
         logger.info(f"Email enviado a {to_addr}")
@@ -541,12 +546,16 @@ def send_email_with_pdf(to_addr, subject, body_text, pdf_bytes, pdf_filename):
         if not service:
             return False
         html_body = _build_html_body(body_text)
-        msg_root = EmailMessage()
-        msg_root['Subject'] = subject
-        msg_root['From']    = f'AP Estudio Jurídico <{GMAIL_USER}>'
+        msg_root = MIMEMultipart('mixed')
+        msg_root['Subject'] = _rfc2047(subject)
+        msg_root['From']    = f'{_rfc2047("AP Estudio Jurídico")} <{GMAIL_USER}>'
         msg_root['To']      = to_addr
-        msg_root.set_content(html_body, subtype='html', charset='utf-8')
-        msg_root.add_attachment(pdf_bytes, maintype='application', subtype='pdf', filename=pdf_filename)
+        msg_root.attach(MIMEText(html_body, 'html', 'utf-8'))
+        part = MIMEBase('application', 'pdf')
+        part.set_payload(pdf_bytes)
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', 'attachment', filename=pdf_filename)
+        msg_root.attach(part)
         raw = base64.urlsafe_b64encode(msg_root.as_bytes()).decode()
         service.users().messages().send(userId='me', body={'raw': raw}).execute()
         logger.info(f"Email con PDF enviado a {to_addr}")
@@ -2523,9 +2532,10 @@ def gmail_reply(msg_id, to, subject, body):
         headers = {h['name']: h['value'] for h in original.get('payload', {}).get('headers', [])}
         message_id_header = headers.get('Message-ID', '')
 
-        msg = EmailMessage()
-        msg['Subject'] = subject if subject.startswith('Re:') else f'Re: {subject}'
-        msg['From'] = f'AP Estudio Jurídico <{GMAIL_USER}>'
+        subj = subject if subject.startswith('Re:') else f'Re: {subject}'
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = _rfc2047(subj)
+        msg['From'] = f'{_rfc2047("AP Estudio Jurídico")} <{GMAIL_USER}>'
         msg['To'] = to
         if message_id_header:
             msg['In-Reply-To'] = message_id_header
@@ -2538,7 +2548,7 @@ def gmail_reply(msg_id, to, subject, body):
             '<em style="color:#666;">Secretaría AP Estudio Jurídico</em>'
             '</body></html>'
         )
-        msg.set_content(html_body, subtype='html', charset='utf-8')
+        msg.attach(MIMEText(html_body, 'html', 'utf-8'))
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         service.users().messages().send(
@@ -2886,11 +2896,11 @@ async def enviar_diario_secretaria(bot):
     try:
         service = get_gmail_service()
         if service:
-            msg_root = EmailMessage()
-            msg_root['Subject'] = f'Diario de Secretaria - {hoy}'
-            msg_root['From'] = f'AP Estudio Jurídico <{GMAIL_USER}>'
+            msg_root = MIMEMultipart('alternative')
+            msg_root['Subject'] = _rfc2047(f'Diario de Secretaria - {hoy}')
+            msg_root['From'] = f'{_rfc2047("AP Estudio Jurídico")} <{GMAIL_USER}>'
             msg_root['To'] = GMAIL_USER
-            msg_root.set_content(cuerpo_html, subtype='html', charset='utf-8')
+            msg_root.attach(MIMEText(cuerpo_html, 'html', 'utf-8'))
             raw = base64.urlsafe_b64encode(msg_root.as_bytes()).decode()
             service.users().messages().send(userId='me', body={'raw': raw}).execute()
             logger.info("Diario de secretaría enviado.")
